@@ -1,0 +1,19 @@
+dsh-taskboard
+Copyright 2026 the dsh-taskboard authors
+
+The task workspace, inbox, and user-created agent interaction model is inspired
+by Multica (https://github.com/multica-ai/multica). This project does not embed
+Multica source code.
+
+This product includes software derived from dashi-taskboard
+(https://github.com/chuspeeism/dashi-taskboard), Copyright the
+dashi-taskboard authors, licensed under the Apache License, Version 2.0.
+
+What is derived: the board's domain vocabulary (issue statuses, priorities,
+relation kinds, the project/issue/comment/activity shape) and the issue-flow
+rules its bundled Skill taught. The implementation is a rewrite against the
+DeepSeek Harness plugin interfaces — none of the upstream server, storage,
+CLI, browser, injection, desktop, or cloud code is carried over.
+
+This product depends on, but does not include, DeepSeek Harness
+(https://github.com/deepseek-ai/deepseek-harness), licensed under MIT.
