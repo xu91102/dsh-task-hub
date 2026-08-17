@@ -13,9 +13,10 @@
 
 /** Stylesheet text, injected once per page by {@link installStyles}. */
 const CSS = `
-/* The composer floats over the bottom of the session body (the chat view lives
-   with the same thing), so the board reserves room for it rather than letting
-   its last cards sit under it. */
+/* Task Hub is a workspace surface, not a chat surface. It fills the active
+   conversation view and suppresses the sibling composer only while mounted. */
+.tb-task-hub-workspace { box-sizing: border-box; height: 100%; min-height: 0; }
+[data-conversation-scroll]:has(.tb-task-hub-workspace) > [data-composer-seat] { display: none; }
 .tb-root {
   box-sizing: border-box; display: flex; flex-direction: column;
   height: 100%; min-height: 0; overflow: hidden; color: var(--dsw-alias-label-primary);
@@ -86,7 +87,7 @@ const CSS = `
 
 .tb-columns {
   flex: 1; min-height: 0; display: flex; gap: 12px; align-items: stretch;
-  overflow: auto; padding: 0 18px 220px;
+  overflow: auto; padding: 0 18px 18px;
 }
 .tb-column {
   flex: 0 0 280px; min-height: 420px; display: flex; flex-direction: column;
@@ -214,6 +215,11 @@ const CSS = `
 /* Execution history and schedule editor inside the expanded card. */
 .tb-executions { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .tb-executions li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tb-execution-panel { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); }
+.tb-execution-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tb-execution-head strong { font-size: 13px; }
+.tb-execution-head span, .tb-execution-empty { color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.tb-execution-empty { margin: 0; }
 .tb-exec-badge {
   font-size: 10px; font-weight: 500; padding: 1px 6px; border-radius: 999px;
   color: var(--dsw-alias-label-secondary); border: 1px solid var(--dsw-alias-border-l1);
@@ -711,7 +717,6 @@ button.tb-agent-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
   .tb-board-toolbar { align-items: flex-start; }
   .tb-board-projects { order: 3; width: 100%; }
   .tb-search { margin-left: auto; }
-  .tb-columns { padding-bottom: 180px; }
   .tb-agent-row { grid-template-columns: minmax(180px, 2fr) 1fr .8fr; }
   .tb-agent-row > :nth-child(3), .tb-agent-row > :nth-child(4), .tb-agent-row > :nth-child(5), .tb-agent-row > :nth-child(6) { display: none; }
   .tb-agent-overview, .tb-task-document { grid-template-columns: 1fr; }

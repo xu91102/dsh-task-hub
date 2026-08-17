@@ -13,7 +13,15 @@ export function TaskHubWorkspace(
   },
 ) {
   const navigation = useTaskHubNavigation()
-  if (navigation.view === 'inbox') return <InboxView {...props} />
-  if (navigation.view === 'agents') return <AgentsView {...props} />
-  return <BoardView {...props} />
+  return (
+    <div className="tb-task-hub-workspace">
+      {navigation.view === 'inbox' ? (
+        <InboxView {...props} />
+      ) : navigation.view === 'agents' ? (
+        <AgentsView {...props} />
+      ) : (
+        <BoardView {...props} />
+      )}
+    </div>
+  )
 }

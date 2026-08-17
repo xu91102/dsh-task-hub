@@ -56,6 +56,10 @@ These screenshots were captured from the plugin running in a local DeepSeek Harn
 
 ![Real DeepSeek Harness task board with project filters, scheduler controls, and status columns](docs/assets/task-board.png)
 
+**Task detail**: clicking anywhere on a task card opens its full document with the description, assignment, execution history, bound session, schedule, activity trail, and editable properties:
+
+![Real task detail with execution status and property inspector inside DeepSeek Harness](docs/assets/task-detail.png)
+
 **Create task**: the wide manual composer uses Harness theme tokens and keeps status, priority, agent assignment, and project context visible without leaving the board. Switching modes opens the real agent-assisted task flow:
 
 ![Real task creation dialog inside DeepSeek Harness](docs/assets/task-create.png)

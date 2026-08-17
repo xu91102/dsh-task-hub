@@ -56,6 +56,10 @@
 
 ![DeepSeek Harness 中真实运行的任务看板，包含项目筛选、调度器和状态列](docs/assets/task-board.png)
 
+**任务详情**：点击任务卡片任意非操作区域即可打开完整任务文档，查看描述、智能体分配、执行历史、关联会话、调度规则、活动流水和可编辑属性：
+
+![DeepSeek Harness 中真实运行的任务详情，包含执行情况和属性栏](docs/assets/task-detail.png)
+
 **创建任务**：宽版手动编辑器使用 Harness 主题 token，并在看板内统一展示状态、优先级、智能体分配和项目上下文；切换模式后会进入真实智能体辅助创建流程：
 
 ![DeepSeek Harness 中真实运行的创建任务弹窗](docs/assets/task-create.png)

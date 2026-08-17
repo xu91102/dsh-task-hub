@@ -259,7 +259,6 @@ function Card({
         startX: number
         startY: number
         active: boolean
-        openOnRelease: boolean
       }
     | undefined
   >(undefined)
@@ -357,7 +356,6 @@ function Card({
           startX: event.clientX,
           startY: event.clientY,
           active: false,
-          openOnRelease: target.closest('.tb-card-title') !== null,
         }
         event.currentTarget.setPointerCapture(event.pointerId)
       }}
@@ -383,7 +381,7 @@ function Card({
         pointerDragRef.current = undefined
         event.currentTarget.releasePointerCapture(event.pointerId)
         if (!gesture.active) {
-          if (gesture.openOnRelease) onToggle()
+          onToggle()
           return
         }
         const target = document.elementFromPoint(event.clientX, event.clientY)
@@ -811,36 +809,44 @@ function Card({
           )}
 
           {/* Execution history, newest first — the attempt trail the board keeps. */}
-          {task.executions.length > 0 && (
-            <ol className="tb-executions">
-              {[...task.executions].reverse().map(execution => (
-                <li key={execution.id} data-result={execution.result}>
-                  <span className="tb-exec-badge" data-result={execution.result}>
-                    {resultLabel(execution.result)}
-                  </span>
-                  <span className="tb-exec-times">
-                    {formatTime(execution.startedAt)}
-                    {execution.endedAt !== undefined && ` → ${formatTime(execution.endedAt)}`}
-                  </span>
-                  {execution.sessionId !== undefined && (
-                    <button
-                      type="button"
-                      className="tb-link"
-                      onClick={() => {
-                        openSession(execution.sessionId!)
-                      }}
-                      title={execution.sessionId}
-                    >
-                      session ⌁
-                    </button>
-                  )}
-                  {execution.error !== undefined && execution.error !== '' && (
-                    <span className="tb-exec-error">{execution.error}</span>
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
+          <section className="tb-execution-panel" aria-label="任务执行情况">
+            <div className="tb-execution-head">
+              <strong>执行情况</strong>
+              <span>{task.executions.length} 次运行</span>
+            </div>
+            {task.executions.length > 0 ? (
+              <ol className="tb-executions">
+                {[...task.executions].reverse().map(execution => (
+                  <li key={execution.id} data-result={execution.result}>
+                    <span className="tb-exec-badge" data-result={execution.result}>
+                      {resultLabel(execution.result)}
+                    </span>
+                    <span className="tb-exec-times">
+                      {formatTime(execution.startedAt)}
+                      {execution.endedAt !== undefined && ` → ${formatTime(execution.endedAt)}`}
+                    </span>
+                    {execution.sessionId !== undefined && (
+                      <button
+                        type="button"
+                        className="tb-link"
+                        onClick={() => {
+                          openSession(execution.sessionId!)
+                        }}
+                        title={execution.sessionId}
+                      >
+                        session ⌁
+                      </button>
+                    )}
+                    {execution.error !== undefined && execution.error !== '' && (
+                      <span className="tb-exec-error">{execution.error}</span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="tb-execution-empty">这个任务尚未执行。</p>
+            )}
+          </section>
 
           {/* Session mail: messages this issue's agent exchanged with another
               issue-session's agent. dsh has no native peer messaging, so the
