@@ -13,7 +13,7 @@ English · [中文](README-zh.md)
 
 `dsh-task-hub` is an independent plugin that adds a project task board, a human inbox, and a roster of user-created agents to DeepSeek Harness. The board is resolved from the active session's workspace, and assigned work runs in a real persistent Harness conversation with the selected Agent Preset and current model configuration.
 
-The product flow is inspired by [Multica](https://github.com/multica-ai/multica), but the implementation uses DeepSeek Harness plugin services, storage, session APIs, tools, and client extension slots. It is not a Multica fork and does not embed Multica source code.
+The implementation uses DeepSeek Harness plugin services, storage, session APIs, tools, and client extension slots.
 
 <p align="center">
   <a href="#quick-start"><img src="https://img.shields.io/badge/Quick_Start-4CAF50?style=for-the-badge" alt="Quick Start" /></a>

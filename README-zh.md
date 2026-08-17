@@ -13,7 +13,7 @@
 
 `dsh-task-hub` 是一个独立插件，为 DeepSeek Harness 增加项目任务看板、人工收件箱和用户自建智能体名册。看板根据当前会话的工作区解析；任务分配后，会使用所选 Agent Preset 和当前模型配置，在一个真实、持久化的 Harness 对话中执行。
 
-产品交互参考了 [Multica](https://github.com/multica-ai/multica)，实现则完全使用 DeepSeek Harness 的插件服务、存储、会话 API、工具和客户端扩展槽。本项目不是 Multica 的分叉，也不嵌入 Multica 源码。
+本项目使用 DeepSeek Harness 的插件服务、存储、会话 API、工具和客户端扩展槽实现。
 
 <p align="center">
   <a href="#快速开始"><img src="https://img.shields.io/badge/快速开始-4CAF50?style=for-the-badge" alt="快速开始" /></a>
