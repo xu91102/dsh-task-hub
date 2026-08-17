@@ -299,6 +299,137 @@ export async function startAgentBuilder(
 }
 
 /**
+ * Start a logged Harness conversation that refines and creates one board task.
+ * @param ctx - Context with agents and optional goals/workspaces.
+ * @param board - Board containing the target project.
+ * @param options.projectId - Project that will own the task and builder session.
+ * @param options.description - User's initial task request.
+ * @param options.agentProfileId - Optional user-created agent to assign and use as the builder identity.
+ * @returns the persistent builder session id.
+ */
+export async function startTaskBuilder(
+  ctx: Context,
+  board: Taskboard,
+  options: { projectId: string; description: string; agentProfileId?: string },
+): Promise<{ sessionId: string }> {
+  const project = board.getProject(options.projectId)
+  if (project === undefined) {
+    throw new TaskboardError('not-found', `project "${options.projectId}" does not exist`)
+  }
+  const description = options.description.trim()
+  if (description === '') {
+    throw new TaskboardError('invalid-input', 'task builder needs a task description')
+  }
+  const profile =
+    options.agentProfileId === undefined ? undefined : board.getAgentProfile(options.agentProfileId)
+  if (options.agentProfileId !== undefined && profile === undefined) {
+    throw new TaskboardError(
+      'not-found',
+      `agent profile "${options.agentProfileId}" does not exist`,
+    )
+  }
+  if (profile !== undefined && profile.projectId !== project.id) {
+    throw new TaskboardError('invalid-input', 'task builder agent belongs to another project')
+  }
+
+  const agent = await spawnAgentSession(ctx, {
+    cwd: project.workspacePath ?? process.cwd(),
+    ...(profile !== undefined ? { presetId: profile.presetId } : {}),
+    configure: builderCtx => {
+      builderCtx.effect(
+        () =>
+          builderCtx.tools.register(
+            defineTool({
+              name: 'task_create_confirmed',
+              description:
+                'Create the agreed board task after the user explicitly confirms its final fields. Call this once only.',
+              parameters: {
+                title: { type: 'string', required: true, description: 'Concise task title' },
+                description: {
+                  type: 'string',
+                  required: true,
+                  description: 'Complete task background, objective, and acceptance criteria',
+                },
+                status: {
+                  type: 'string',
+                  enum: ['proposed', 'backlog', 'todo'],
+                  required: true,
+                  description: 'Initial board column',
+                },
+                priority: {
+                  type: 'string',
+                  enum: ['none', 'low', 'medium', 'high', 'urgent'],
+                  required: true,
+                  description: 'Task priority',
+                },
+              },
+              output: {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string', required: true },
+                    title: { type: 'string', required: true },
+                  },
+                  additionalProperties: false,
+                },
+                render: (_args, value) => [
+                  { type: 'text', text: `Created board task “${value.title}”.` },
+                ],
+              },
+              async execute(args) {
+                const task = await board.createTask(
+                  {
+                    projectId: project.id,
+                    title: args.title,
+                    description: args.description,
+                    status: args.status as Task['status'],
+                    priority: args.priority as Task['priority'],
+                    ...(profile !== undefined ? { agentProfileId: profile.id } : {}),
+                  },
+                  LOCAL_USER,
+                )
+                return { id: task.id, title: task.title }
+              },
+            }),
+          ),
+        'taskboard: builder task creation tool',
+      )
+    },
+  })
+  try {
+    ctx.reflect.get('goals')?.create(agent, { objective: 'Create a confirmed board task' })
+  } catch (error) {
+    ctx.logger.warn('taskboard: could not set the task builder session goal', error)
+  }
+  agent.followup(
+    createUserMessage({
+      content: [
+        {
+          type: 'text',
+          text: [
+            profile !== undefined
+              ? `You are ${profile.name}, helping the user create a task for your own queue.`
+              : 'Help the user turn this request into one executable board task.',
+            profile?.instructions.trim() === '' || profile?.instructions === undefined
+              ? ''
+              : `Use these standing instructions while refining the task:\n${profile.instructions.trim()}`,
+            'Ask only the focused questions needed to remove ambiguity.',
+            'Then show the final Title, Description with acceptance criteria, Initial status, and Priority.',
+            'Ask for explicit confirmation before saving anything.',
+            'Only after confirmation, call task_create_confirmed exactly once.',
+            `Initial request: ${description}`,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        },
+      ],
+      source: { kind: 'user' },
+    }),
+  )
+  return { sessionId: agent.id }
+}
+
+/**
  * Open a fresh session for one issue and hand it the work.
  *
  * The actor is the local user: starting work is a human act, or the scheduler

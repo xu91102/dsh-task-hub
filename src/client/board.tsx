@@ -1,10 +1,10 @@
 /**
  * The board view — one tab in the conversation view ring, beside Chat.
  *
- * Kept deliberately light: dsh's own primitives and theme tokens do the looking,
- * so this file holds board behaviour and almost no styling. There is one view
- * (columns), not the original's four, and the detail pane is an inline
- * expansion rather than a third column.
+ * The interaction model follows Multica's task workspace while the visual
+ * treatment uses Harness primitives and theme tokens. The board keeps Harness
+ * capabilities that do not exist in Multica: proposal approval, schedules,
+ * execution sessions, and cross-session mail.
  *
  * The board is WORKSPACE-SCOPED: the host resolves which board this session
  * belongs to (by its working directory), so opening the tab in another
@@ -54,18 +54,18 @@ const COLUMNS: readonly TaskStatus[] = [
   'failed',
 ]
 
-/** Column headings. `proposed` says what it wants from the reader. */
+/** Chinese column headings aligned with the task language used by Multica. */
 const COLUMN_LABEL: Record<TaskStatus, string> = {
-  proposed: 'Proposed · needs you',
-  backlog: 'Backlog',
-  todo: 'Todo',
-  in_progress: 'In progress',
-  in_review: 'In review',
-  blocked: 'Blocked',
-  done: 'Done',
-  archieved: 'Archieved',
-  failed: 'Failed',
-  canceled: 'Canceled',
+  proposed: '待规划',
+  backlog: '待排期',
+  todo: '待办',
+  in_progress: '进行中',
+  in_review: '审核中',
+  blocked: '已阻塞',
+  done: '已完成',
+  archieved: '已归档',
+  failed: '异常',
+  canceled: '已取消',
 }
 
 /** Priorities worth a visual marker; `none` and `low` get none. */
@@ -88,10 +88,19 @@ function formatTime(ms: number): string {
   const date = new Date(ms)
   const now = Date.now()
   const minutes = Math.floor((now - ms) / 60000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m`
-  if (minutes < 60 * 24) return `${Math.floor(minutes / 60)}h`
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  if (minutes < 60 * 24) return `${Math.floor(minutes / 60)} 小时前`
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+type TaskScope = 'all' | 'members' | 'agents'
+
+/** Filter one task by the Multica-style ownership scopes. */
+function matchesScope(task: Task, scope: TaskScope): boolean {
+  if (scope === 'all') return true
+  if (scope === 'agents') return task.agentProfileId !== undefined
+  return task.agentProfileId === undefined
 }
 
 /** Result badge word for one settled execution. */
@@ -130,6 +139,7 @@ interface BoardData {
 /**
  * One issue card.
  * @param props.task - The issue.
+ * @param props.projectName - Board name shown as the project chip.
  * @param props.expanded - Whether the detail is open.
  * @param props.detail - Loaded detail, when open.
  * @param props.onToggle - Open or close the detail.
@@ -153,6 +163,7 @@ interface BoardData {
  */
 function Card({
   task,
+  projectName,
   expanded,
   detail,
   messages,
@@ -177,6 +188,7 @@ function Card({
   openSession,
 }: {
   task: Task
+  projectName: string
   expanded: boolean
   detail: TaskDetail | undefined
   /** Board-wide session mail; this card keeps the slice that touches it. */
@@ -389,6 +401,14 @@ function Card({
         onDragEnd()
       }}
     >
+      {!expanded && (
+        <div className="tb-card-kicker">
+          <span className="tb-card-priority-icon" data-priority={task.priority} aria-hidden="true">
+            {task.priority === 'urgent' || task.priority === 'high' ? '▥' : '—'}
+          </span>
+          <span>{task.id.slice(0, 8).toUpperCase()}</span>
+        </div>
+      )}
       {editingTitle ? (
         <div className="tb-card-head">
           <input
@@ -458,6 +478,17 @@ function Card({
         </div>
       )}
 
+      {!expanded && task.description !== '' && (
+        <p className="tb-card-preview">{task.description.replace(/\s+/gu, ' ').trim()}</p>
+      )}
+
+      {!expanded && (
+        <span className="tb-card-project" title={projectName}>
+          <span aria-hidden="true">▰</span>
+          {projectName}
+        </span>
+      )}
+
       {/* Being in `proposed` IS the pending state — no second condition on who
           proposed it, or a proposal that arrived another way would look
           undecidable. */}
@@ -522,7 +553,7 @@ function Card({
               '智能体'}
           </span>
         )}
-        <span className="tb-time">updated {formatTime(Date.parse(task.updatedAt))}</span>
+        <span className="tb-time">更新于 {formatTime(Date.parse(task.updatedAt))}</span>
       </div>
 
       {/* The issue's own session — opened by the scheduler or by hand. It shows
@@ -1005,16 +1036,21 @@ export function BoardView({
   // Mirrors the scheduler default: the board starts with Parallel 5, not 1.
   const [concurrency, setConcurrency] = useState('5')
   const [filter, setFilter] = useState('')
+  const [scope, setScope] = useState<TaskScope>('all')
   /** Board-change frames seen since mount; the detail pane refetches on each. */
   const [frames, setFrames] = useState(0)
   /** Whether the "new taskboard" form is open. */
   const [creating, setCreating] = useState(false)
   const [creatingTask, setCreatingTask] = useState(false)
+  const [createStatus, setCreateStatus] = useState<TaskStatus>('todo')
   const [commentDraft, setCommentDraft] = useState('')
   /** Task id currently being dragged; undefined = no drag in flight. */
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined)
   useEffect(() => {
-    if (takeNewTaskRequest()) setCreatingTask(true)
+    if (takeNewTaskRequest()) {
+      setCreateStatus('todo')
+      setCreatingTask(true)
+    }
   }, [navigation.createTaskToken])
 
   useEffect(() => {
@@ -1425,13 +1461,13 @@ export function BoardView({
   const byStatus = useMemo(() => {
     const groups = new Map<TaskStatus, Task[]>()
     for (const task of tasks) {
-      if (!matchesFilter(task, filter)) continue
+      if (!matchesFilter(task, filter) || !matchesScope(task, scope)) continue
       const bucket = groups.get(task.status)
       if (bucket === undefined) groups.set(task.status, [task])
       else bucket.push(task)
     }
     return groups
-  }, [tasks, filter])
+  }, [tasks, filter, scope])
 
   const waiting = byStatus.get('proposed')?.length ?? 0
   const todoCount = byStatus.get('todo')?.length ?? 0
@@ -1502,6 +1538,7 @@ export function BoardView({
           <main className="tb-task-main">
             <MemoCard
               task={selectedTask}
+              projectName={activeProject?.name ?? selectedTask.projectId}
               messages={messages}
               agents={agents}
               expanded
@@ -1612,76 +1649,118 @@ export function BoardView({
           open={creatingTask}
           project={activeProject}
           agents={agents}
+          initialStatus={createStatus}
           onClose={() => setCreatingTask(false)}
-          onCreated={task => {
-            setOpenId(task.id)
+          onCreated={(task, keepOpen) => {
+            if (!keepOpen) setOpenId(task.id)
             void refresh()
           }}
+          onOpenSession={openSession}
         />
       </div>
     )
   }
 
   return (
-    <div className="tb-root">
-      <div className="tb-bar">
-        <Button size="sm" variant="primary" onClick={() => setCreatingTask(true)}>
+    <div className="tb-root tb-board-page">
+      <header className="tb-board-head">
+        <div className="tb-board-title">
+          <span className="tb-board-title-icon" aria-hidden="true">
+            ☷
+          </span>
+          <h1>任务</h1>
+          <span>{tasks.length}</span>
+        </div>
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={() => {
+            setCreateStatus('todo')
+            setCreatingTask(true)
+          }}
+        >
           ＋ 新建任务
         </Button>
-        {view !== undefined && (
-          <Pill
-            active={projectId === undefined}
-            onClick={() => {
-              setProjectId(undefined)
-            }}
-          >
-            {view.project.name}
-            {projectId === undefined && tasks.length > 0 && (
-              <span style={{ marginLeft: 4, opacity: 0.65, fontSize: 11 }}>{tasks.length}</span>
-            )}
-          </Pill>
-        )}
-        {projects
-          .filter(project => project.id !== view?.project.id)
-          .map(project => (
+      </header>
+
+      <div className="tb-board-toolbar">
+        <div className="tb-board-scopes" aria-label="任务范围">
+          {(
+            [
+              ['all', '全部'],
+              ['members', '成员'],
+              ['agents', '智能体'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className="tb-filter-chip"
+              data-active={scope === value ? 'true' : undefined}
+              onClick={() => setScope(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="tb-board-projects" aria-label="任务项目">
+          {view !== undefined && (
             <Pill
-              key={project.id}
-              active={projectId === project.id}
+              active={projectId === undefined}
               onClick={() => {
-                setProjectId(projectId === project.id ? undefined : project.id)
+                setProjectId(undefined)
               }}
             >
-              {project.name}
-              {(projectId === project.id ? tasks.length : project.count) > 0 && (
-                <span style={{ marginLeft: 4, opacity: 0.65, fontSize: 11 }}>
-                  {projectId === project.id ? tasks.length : project.count}
-                </span>
+              {view.project.name}
+              {projectId === undefined && tasks.length > 0 && (
+                <span style={{ marginLeft: 4, opacity: 0.65, fontSize: 11 }}>{tasks.length}</span>
               )}
             </Pill>
-          ))}
-        <button
-          type="button"
-          className="tb-new-project"
-          onClick={() => {
-            setCreating(true)
-          }}
-          title={t('project.new.title')}
-          aria-label={t('project.new.title')}
-        >
-          <IconPlusOutline16 size={14} />
-        </button>
+          )}
+          {projects
+            .filter(project => project.id !== view?.project.id)
+            .map(project => (
+              <Pill
+                key={project.id}
+                active={projectId === project.id}
+                onClick={() => {
+                  setProjectId(projectId === project.id ? undefined : project.id)
+                }}
+              >
+                {project.name}
+                {(projectId === project.id ? tasks.length : project.count) > 0 && (
+                  <span style={{ marginLeft: 4, opacity: 0.65, fontSize: 11 }}>
+                    {projectId === project.id ? tasks.length : project.count}
+                  </span>
+                )}
+              </Pill>
+            ))}
+          <button
+            type="button"
+            className="tb-new-project"
+            onClick={() => {
+              setCreating(true)
+            }}
+            title={t('project.new.title')}
+            aria-label={t('project.new.title')}
+          >
+            <IconPlusOutline16 size={14} />
+          </button>
+        </div>
         <input
           className="tb-search"
           type="search"
-          placeholder="filter by title or description…"
+          placeholder="按标题或描述筛选…"
           value={filter}
           onChange={event => {
             setFilter(event.target.value)
           }}
-          aria-label="filter issues"
+          aria-label="筛选任务"
         />
         <span className="tb-bar-end">
-          {waiting > 0 && <span className="tb-waiting">{waiting} waiting for you</span>}
+          <span className="tb-agent-working">{view?.scheduler.running ?? 0} 个智能体工作中</span>
+          {waiting > 0 && <span className="tb-waiting">{waiting} 个任务待确认</span>}
           {todoCount > 0 && (
             <Button
               size="sm"
@@ -1690,7 +1769,7 @@ export function BoardView({
                 void startNext()
               }}
             >
-              Work the next issue
+              执行下一个任务
             </Button>
           )}
         </span>
@@ -1706,10 +1785,10 @@ export function BoardView({
               void toggleAutoPull()
             }}
           >
-            Auto-pull {view.scheduler.autoPull ? 'on' : 'off'}
+            自动领取{view.scheduler.autoPull ? '：开' : '：关'}
           </button>
           <label className="tb-sched-field">
-            Parallel
+            并行数
             <input
               type="number"
               min={1}
@@ -1726,7 +1805,7 @@ export function BoardView({
             />
           </label>
           <span className="tb-sched-state">
-            {view.scheduler.running} running · {view.scheduler.waiting} waiting
+            {view.scheduler.running} 运行中 · {view.scheduler.waiting} 等待中
           </span>
         </div>
       )}
@@ -1766,16 +1845,34 @@ export function BoardView({
               }}
             >
               <h3 className="tb-column-head">
-                {COLUMN_LABEL[status]}
-                <span className="tb-count">{column.length}</span>
+                <span className="tb-column-title">
+                  <span className="tb-status-dot" data-status={status} />
+                  {COLUMN_LABEL[status]}
+                  <span className="tb-count">{column.length}</span>
+                </span>
+                <button
+                  type="button"
+                  className="tb-column-add"
+                  aria-label={`在${COLUMN_LABEL[status]}中新建任务`}
+                  onClick={() => {
+                    setCreateStatus(status)
+                    setCreatingTask(true)
+                  }}
+                >
+                  <IconPlusOutline16 size={14} />
+                </button>
               </h3>
               {column.length === 0 && draggingId !== undefined && (
-                <div className="tb-column-drop-hint">Drop to move here</div>
+                <div className="tb-column-drop-hint">拖到这里移动任务</div>
+              )}
+              {column.length === 0 && draggingId === undefined && (
+                <div className="tb-column-empty">暂无任务</div>
               )}
               {column.map(task => (
                 <MemoCard
                   key={task.id}
                   task={task}
+                  projectName={activeProject?.name ?? task.projectId}
                   messages={messages}
                   agents={agents}
                   expanded={openId === task.id}
@@ -1835,15 +1932,14 @@ export function BoardView({
 
       {tasks.length === 0 && elsewhere.length === 0 && (
         <p className="tb-empty">
-          No issues yet. Add one with <code>/task &lt;title&gt;</code> in the chat.
+          还没有任务。点击“新建任务”，或在聊天中输入 <code>/task &lt;标题&gt;</code>。
         </p>
       )}
       {tasks.length === 0 && elsewhere.length > 0 && (
         <div className="tb-empty">
           <p>
-            This board is empty, but {elsewhere.reduce((sum, project) => sum + project.count, 0)}{' '}
-            issue{elsewhere.length === 1 && elsewhere[0]!.count === 1 ? '' : 's'} live on another
-            board:
+            当前项目没有任务，其他项目共有{' '}
+            {elsewhere.reduce((sum, project) => sum + project.count, 0)} 个任务：
           </p>
           <div className="tb-decide">
             {elsewhere.map(project => (
@@ -1855,14 +1951,14 @@ export function BoardView({
                   setProjectId(project.id)
                 }}
               >
-                Open {project.name} · {project.count}
+                打开 {project.name} · {project.count}
               </Button>
             ))}
           </div>
         </div>
       )}
       {tasks.length > 0 && byStatus.size === 0 && (
-        <p className="tb-empty">No issues match the filter.</p>
+        <p className="tb-empty">没有符合当前筛选条件的任务。</p>
       )}
 
       <CreateProjectModal
@@ -1882,11 +1978,13 @@ export function BoardView({
         open={creatingTask}
         project={activeProject}
         agents={agents}
+        initialStatus={createStatus}
         onClose={() => setCreatingTask(false)}
-        onCreated={task => {
-          setOpenId(task.id)
+        onCreated={(task, keepOpen) => {
+          if (!keepOpen) setOpenId(task.id)
           void refresh()
         }}
+        onOpenSession={openSession}
       />
     </div>
   )

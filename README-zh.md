@@ -42,6 +42,7 @@
 | 持久化审批队列          | agent 提出的 issue 落在 `proposed` 列，等真人批准或拒绝——跨重启持久保存，不像一次性审批弹窗那样会丢                                                                                                      |
 | 看板是聊天的平级页签    | 看板注册进 conversation view ring，作为 Chat / Trajectory 旁边的一个页签出现，而不是独立页面                                                                                                             |
 | Task Hub 侧边栏         | 常驻的「任务 / 收件箱 / 智能体」入口打开同一个工作区级 Hub；任务卡片可跨状态列拖拽，并以完整文档和属性栏查看                                                                                             |
+| Multica 式任务流        | 全高状态列、紧凑任务卡片、归属范围筛选和宽版任务编辑器参考 Multica，并统一使用 Harness 主题 token；支持手动创建与智能体辅助创建                                                                          |
 | 用户自建智能体          | 参考 Multica 的名册、完整创建页和详情页统一管理身份、Owner、权限、长期指令、运行时、并行度、工作量和真实执行统计；AI Builder 会启动持久化、可追溯的 Harness 对话，并通过会话专用工具保存用户确认后的配置 |
 | 人工收件箱              | 智能体提案、待审核结果、失败执行和跨智能体消息进入同一个可读/归档队列，可直接打开任务、审核结果或跳转执行会话                                                                                            |
 
@@ -198,6 +199,7 @@ graph LR
 | `task.list`           | 列出 issue，可按项目、状态或会话过滤                                                          |
 | `task.get`            | 读取单个 issue 及其评论与活动流水                                                             |
 | `task.create`         | 创建 issue                                                                                    |
+| `task.builder.start`  | 启动持久化 Harness 对话，只有用户确认最终字段后才创建任务                                     |
 | `task.update`         | 修改 issue；过期的 `expectedVersion` 会被拒绝                                                 |
 | `comment.create`      | 给 issue 加评论                                                                               |
 | `task.start`          | 为单个 issue 新建一个独立会话并把活交给它                                                     |

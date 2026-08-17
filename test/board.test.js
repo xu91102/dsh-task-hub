@@ -21,6 +21,7 @@ import {
   startAgentBuilder,
   startNextTask,
   startTask,
+  startTaskBuilder,
 } from '../lib/session-link.js'
 
 /** One table over a Map, with the domain's write-chain semantics. */
@@ -527,6 +528,56 @@ test('AI agent builder opens a real logged Harness conversation', async () => {
   assert.equal(created.name, 'TypeScript 开发')
   assert.equal(board.listAgentProfiles('p1')[0].presetId, 'coding-runtime')
   assert.equal(board.listAgentProfiles('p1')[0].visibility, 'workspace')
+})
+
+test('AI task builder creates only through its confirmed session tool', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+  const profile = await board.createAgentProfile({
+    projectId: 'p1',
+    name: '主力开发',
+    presetId: 'coding-runtime',
+    instructions: '先澄清验收条件。',
+  })
+
+  const result = await fromRestrictedFiber(ctx, child =>
+    startTaskBuilder(child, board, {
+      projectId: 'p1',
+      description: '修复登录失败后的错误提示',
+      agentProfileId: profile.id,
+    }),
+  )
+
+  const entry = ctx.agents.entries[0]
+  assert.equal(entry.agent.id, result.sessionId)
+  assert.equal(entry.options.meta.cwd, '/repo')
+  assert.equal(entry.options.meta.agentPreset, 'coding-runtime')
+  assert.equal(board.listTasks({ projectId: 'p1' }).length, 0)
+  assert.match(entry.agent.followups[0].content[0].text, /explicit confirmation/)
+  assert.match(entry.agent.followups[0].content[0].text, /task_create_confirmed/)
+  assert.match(entry.agent.followups[0].content[0].text, /登录失败/)
+  assert.deepEqual(ctx.goals.created, [{ objective: 'Create a confirmed board task' }])
+
+  const registered = []
+  await entry.options.setup({
+    on: () => () => {},
+    tools: {
+      register: tool => {
+        registered.push(tool)
+        return () => {}
+      },
+    },
+    effect: factory => factory(),
+  })
+  assert.equal(registered[0].name, 'task_create_confirmed')
+  const created = await registered[0].execute({
+    title: '修复登录错误提示',
+    description: '复现失败状态并补充回归测试。',
+    status: 'todo',
+    priority: 'high',
+  })
+  assert.equal(created.title, '修复登录错误提示')
+  assert.equal(board.listTasks({ projectId: 'p1' })[0].agentProfileId, profile.id)
 })
 
 test('user-created agents keep identity separate from their Harness preset', async () => {
