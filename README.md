@@ -4,73 +4,76 @@ English · [中文](README-zh.md)
 
 </div>
 
-<!-- AUTO-GENERATED -->
-
-<h1 align="center">dsh-task-hub</h1>
+<h1 align="center">Task Hub for DeepSeek Harness</h1>
 <p align="center">
-  <strong>Local-first issue orchestrator for DeepSeek Harness: one board per repository, a fresh session per issue, and a scheduler that works the queue itself</strong>
+  <strong>Tasks, inbox, and user-created agents inside the DeepSeek Harness workspace</strong>
   <br />
-  <em>Cordis Plugin · Workspace-Scoped Board · Per-Issue Sessions · Auto-Pull Scheduler · Two Human Approval Gates</em>
+  <em>Independent Cordis plugin · Local durable data · One Harness conversation per execution</em>
 </p>
 
-The task workspace, inbox, and user-created agent interaction model are inspired by [Multica](https://github.com/multica-ai/multica). This plugin is an independent DeepSeek Harness implementation and does not embed Multica source code.
+`dsh-task-hub` is an independent plugin that adds a project task board, a human inbox, and a roster of user-created agents to DeepSeek Harness. The board is resolved from the active session's workspace, and assigned work runs in a real persistent Harness conversation with the selected Agent Preset and current model configuration.
+
+The product flow is inspired by [Multica](https://github.com/multica-ai/multica), but the implementation uses DeepSeek Harness plugin services, storage, session APIs, tools, and client extension slots. It is not a Multica fork and does not embed Multica source code.
 
 <p align="center">
   <a href="#quick-start"><img src="https://img.shields.io/badge/Quick_Start-4CAF50?style=for-the-badge" alt="Quick Start" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-D97706?style=for-the-badge" alt="License" /></a>
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Node.js-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js" />
-  <img src="https://img.shields.io/badge/React-20232A?style=flat&logo=react&logoColor=61DAFB" alt="React" />
-  <img src="https://img.shields.io/badge/Zod-3068B7?style=flat&logo=zod&logoColor=white" alt="Zod" />
-  <img src="https://img.shields.io/badge/esbuild-FFCF00?style=flat&logo=esbuild&logoColor=black" alt="esbuild" />
-  <img src="https://img.shields.io/badge/Cordis-2D2D2D?style=flat" alt="Cordis" />
-</p>
+---
+
+## What is implemented
+
+| Surface             | Current behavior                                                                                                                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tasks               | Workspace-scoped Kanban board with project, member, and agent filters; manual and AI-assisted creation; valid drag-and-drop status transitions; priority, labels, schedules, comments, activity, and execution history                            |
+| Task execution      | Starting or auto-pulling a task creates a fresh persistent Harness session, mounts the chosen Agent Preset, applies the active provider/model/reasoning selection, records the result, and links the exact session back to the task               |
+| User-created agents | Users create and edit durable agent identities with a name, responsibility, standing instructions, access scope, preset, and concurrency. Workload, activity, and run counts come from real task executions rather than a hard-coded runtime list |
+| Inbox               | Durable events for agent proposals, review-ready work, failed runs, and cross-agent messages, with read/archive state and direct actions for the related task and session                                                                         |
+| Human control       | Only a human may approve an agent proposal, accept completed work, or archive accepted work. These checks live in the service, so UI, RPC, and model tools follow the same rules                                                                  |
+| Scheduler           | Optional auto-pull from `todo`, highest priority first, with a live concurrency limit and recovery for vanished sessions                                                                                                                          |
 
 ---
 
-## Features
+## Real project walkthrough
 
-| Feature                  | Description                                                                                                                                                                                                                                                                                                                    |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| One Board Per Repository | The board is bound to the session's working directory, not to the conversation: two sessions in the same repo share a board, and a session in another repo sees its own — the host resolves it, so the browser can never mix projects                                                                                          |
-| Fresh Session Per Issue  | "Work on this" opens a brand-new session with the issue's brief and binds the issue to it, so every issue's transcript and cost are its own — and several can run at once                                                                                                                                                      |
-| Auto-Pull Scheduler      | A scheduler keeps up to N issues in flight and refills from `todo` by itself — highest priority first — with live controls for concurrency and the auto-pull toggle in the board header                                                                                                                                        |
-| Three Human Gates        | An agent can never move an issue out of `proposed`, can never mark one `done`, and can never shelve one as `archieved`: proposals need your approval, finished work needs your acceptance, and archiving accepted work is yours too — all enforced in the service layer, not the UI                                            |
-| Durable Approval Queue   | Agent-proposed issues land in a `proposed` column and stay there until a human approves or rejects them — durable across restarts, unlike a one-shot approval prompt                                                                                                                                                           |
-| Board as a Chat Peer     | The board registers into the conversation view ring, so it appears as a tab beside Chat and Trajectory instead of a separate page                                                                                                                                                                                              |
-| Task Hub Sidebar         | Persistent Tasks, Inbox, and Agents entries open one workspace-native hub; task cards drag between status columns and open as full documents with a property inspector                                                                                                                                                         |
-| Multica-style Task Flow  | Full-height status columns, dense task cards, ownership scopes, and a wide task composer with manual and agent-assisted modes are adapted to Harness theme tokens                                                                                                                                                              |
-| User-Created Agents      | A Multica-inspired roster and full-page creation/detail flow keeps identity, owner, access, standing instructions, runtime preset, concurrency, workload, and real execution statistics together; the AI Builder starts a persistent logged Harness conversation and saves the confirmed profile through a session-scoped tool |
-| Human Inbox              | Proposals, completed work awaiting review, failed executions, and cross-agent mail arrive in one read/archive queue with task, review, and session actions; review events remain available after acceptance or send-back so their read/archive state can be completed                                                          |
+Every image below was captured from this repository installed in a local DeepSeek Harness `web` profile. The tasks, agents, sessions, execution results, and inbox events shown here are actual persisted project data—not mockups or a standalone demo page.
 
----
+### 1. Manage repository work on the task board
 
-## Screenshots
-
-These screenshots were captured from the plugin running in a local DeepSeek Harness `web` profile. They show the real sidebar integration, workspace data, task flow, and agent UI rather than a standalone mock page.
-
-**Task board**: the workspace-scoped Multica-style board inside a real Harness conversation, with ownership filters, project filters, scheduler controls, status columns, execution metadata, and drag-and-drop targets:
+The sidebar entries are contributed by the plugin. The board uses the active Harness workspace and shows project filters, scheduler state, task counts, execution metadata, and drag-and-drop status columns.
 
 ![Real DeepSeek Harness task board with project filters, scheduler controls, and status columns](docs/assets/task-board.png)
 
-**Task detail**: clicking anywhere on a task card opens its full document with the description, assignment, execution history, bound session, schedule, activity trail, and editable properties. "Open session" selects that exact execution session and returns the conversation ring to Chat, so the task prompt and live result are visible immediately:
+### 2. Open the complete task document
+
+Selecting a card opens its description, assignment, priority, execution attempts, bound session, schedule, activity trail, and editable property inspector. "Open session" selects that execution's exact Harness session and switches the conversation view back to Chat.
 
 ![Real task detail with execution status and property inspector inside DeepSeek Harness](docs/assets/task-detail.png)
 
-**Create task**: the wide manual composer uses Harness theme tokens and keeps status, priority, agent assignment, and project context visible without leaving the board. Switching modes opens the real agent-assisted task flow:
+### 3. Create work manually or with an agent
+
+The manual composer keeps the project, status, priority, and assignee visible. Agent-assisted mode starts a logged Harness conversation and persists the task only after the user confirms the proposed fields.
 
 ![Real task creation dialog inside DeepSeek Harness](docs/assets/task-create.png)
 
-**User-created agents**: persistent agent identities are listed with owner, access, runtime, recent activity, and real run counts:
+### 4. Create reusable agent identities
+
+The agent roster contains profiles created by the user. It reports the configured runtime, access scope, active workload, last activity, and run count from durable task history.
 
 ![Real user-created agent roster inside DeepSeek Harness](docs/assets/agents.png)
 
-**Human inbox**: proposals, review-ready work, failures, and agent messages share one readable and archivable queue:
+### 5. Review real agent output in the inbox
+
+This populated inbox shows durable review events from actual task runs. Each event can open the task, accept or return the work, archive the notification, or jump to the linked agent session.
 
 ![Real human inbox inside DeepSeek Harness](docs/assets/inbox.png)
+
+### 6. Inspect the execution in its Harness conversation
+
+Task sessions are ordinary persistent Harness conversations, so the complete prompt, injected context, tool trace, model result, and follow-up composer remain available after navigation from the board or inbox.
+
+![Real DeepSeek Harness task session showing its completed E2E result](docs/assets/task-session.png)
 
 ---
 
