@@ -129,6 +129,9 @@ async function boardFixture(options = {}) {
       }
       mounts = []
       async resolve(id) {
+        if (options.rejectPresetId !== undefined && id === options.rejectPresetId) {
+          throw new Error(`unknown preset: ${id}`)
+        }
         return { id: id ?? 'standard' }
       }
       async mount(ctx, id) {
@@ -137,8 +140,8 @@ async function boardFixture(options = {}) {
     }
     ctx.plugin(Agents)
     ctx.plugin(Goals)
-    ctx.plugin(DefaultModel)
-    ctx.plugin(Presets)
+    if (options.withoutDefaultModel !== true) ctx.plugin(DefaultModel)
+    if (options.withoutPresets !== true) ctx.plugin(Presets)
   }
   if (options.withSessions === true) {
     // The session store (main conversations) and the workspace registry, so the
@@ -426,6 +429,47 @@ function fromRestrictedFiber(ctx, body) {
     })
   })
 }
+
+test('starting an issue refuses to publish a session without a default model', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true, withoutDefaultModel: true })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+  const task = await board.createTask({ projectId: 'p1', title: 'Do the thing' }, human)
+
+  await assert.rejects(
+    fromRestrictedFiber(ctx, child => startTask(child, board, task.id)),
+    /no default model selection is available/,
+  )
+  assert.equal(ctx.agents.entries.length, 0)
+})
+
+test('starting a builder refuses to publish a session when its selected preset cannot resolve', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true, rejectPresetId: 'missing-runtime' })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+
+  await assert.rejects(
+    fromRestrictedFiber(ctx, child =>
+      startAgentBuilder(child, board, {
+        projectId: 'p1',
+        presetId: 'missing-runtime',
+        description: '负责 TypeScript 功能开发',
+      }),
+    ),
+    /unknown preset: missing-runtime/,
+  )
+  assert.equal(ctx.agents.entries.length, 0)
+})
+
+test('starting an issue refuses to publish a session without a preset registry', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true, withoutPresets: true })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+  const task = await board.createTask({ projectId: 'p1', title: 'Do the thing' }, human)
+
+  await assert.rejects(
+    fromRestrictedFiber(ctx, child => startTask(child, board, task.id)),
+    /no agent preset registry is available/,
+  )
+  assert.equal(ctx.agents.entries.length, 0)
+})
 
 test('starting an issue opens a fresh session, moves it, and hands it over', async () => {
   const { board, ctx } = await boardFixture({ withAgents: true })
@@ -740,6 +784,96 @@ test('the inbox derives actionable events and persists read and archive state', 
   const restored = await board.updateInboxItem('p1', proposalItem.id, { archived: false })
   assert.ok(restored.readAt)
   assert.equal(restored.archivedAt, undefined)
+})
+
+test('a review inbox event remains readable and restorable after accept or send back', async () => {
+  const { board } = await boardFixture()
+  await board.createProject({ id: 'p1', name: 'Demo' })
+  const review = await board.createTask(
+    { projectId: 'p1', title: 'Review this', status: 'todo' },
+    human,
+  )
+  await board.openExecution(review.id, 'session-review', {
+    actor: human,
+    status: 'in_progress',
+  })
+  await board.updateTask(review.id, { status: 'in_review' }, { actor: robot })
+  const reviewItem = board.listInbox('p1').find(item => item.type === 'review_ready')
+  assert.ok(reviewItem)
+
+  await board.settleExecution(review.id, 'succeeded', { actor: human })
+  await board.updateTask(review.id, { status: 'done' }, { actor: human })
+  assert.ok(
+    board.listInbox('p1').some(item => item.id === reviewItem.id),
+    'accepting must not erase the review event',
+  )
+  const archived = await board.updateInboxItem('p1', reviewItem.id, {
+    read: true,
+    archived: true,
+  })
+  assert.ok(archived.archivedAt)
+  const restored = await board.updateInboxItem('p1', reviewItem.id, { archived: false })
+  assert.equal(restored.archivedAt, undefined)
+
+  const second = await board.createTask(
+    { projectId: 'p1', title: 'Send this back', status: 'todo' },
+    human,
+  )
+  await board.openExecution(second.id, 'session-send-back', {
+    actor: human,
+    status: 'in_progress',
+  })
+  await board.updateTask(second.id, { status: 'in_review' }, { actor: robot })
+  const secondItem = board
+    .listInbox('p1')
+    .find(item => item.type === 'review_ready' && item.taskId === second.id)
+  assert.ok(secondItem)
+  await board.settleExecution(second.id, 'canceled', { actor: human })
+  await board.updateTask(second.id, { status: 'todo', sessionId: undefined }, { actor: human })
+  assert.ok(
+    board.listInbox('p1').some(item => item.id === secondItem.id),
+    'sending back must not erase the review event',
+  )
+})
+
+test('each transition into review has a distinct durable inbox identity', async () => {
+  const { board } = await boardFixture()
+  await board.createProject({ id: 'p1', name: 'Demo' })
+
+  const executed = await board.createTask(
+    { projectId: 'p1', title: 'Review the same execution twice', status: 'todo' },
+    human,
+  )
+  await board.openExecution(executed.id, 'session-review-twice', {
+    actor: human,
+    status: 'in_progress',
+  })
+  await board.updateTask(executed.id, { status: 'in_review' }, { actor: robot })
+  await board.updateTask(executed.id, { status: 'todo' }, { actor: human })
+  await board.updateTask(executed.id, { status: 'in_review' }, { actor: robot })
+
+  const manual = await board.createTask(
+    { projectId: 'p1', title: 'Review without an execution', status: 'todo' },
+    human,
+  )
+  await board.updateTask(manual.id, { status: 'in_review' }, { actor: human })
+  await board.updateTask(manual.id, { status: 'todo' }, { actor: human })
+  await board.updateTask(manual.id, { status: 'in_review' }, { actor: human })
+
+  for (const task of [executed, manual]) {
+    const events = board
+      .listInbox('p1')
+      .filter(item => item.type === 'review_ready' && item.taskId === task.id)
+    assert.equal(events.length, 2)
+    assert.equal(new Set(events.map(item => item.id)).size, 2)
+
+    await board.updateInboxItem('p1', events[0].id, { archived: true })
+    const afterArchive = board
+      .listInbox('p1')
+      .filter(item => item.type === 'review_ready' && item.taskId === task.id)
+    assert.ok(afterArchive.find(item => item.id === events[0].id)?.archivedAt)
+    assert.equal(afterArchive.find(item => item.id === events[1].id)?.archivedAt, undefined)
+  }
 })
 
 test('an issue with a live session is not started twice', async () => {

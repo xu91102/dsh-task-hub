@@ -147,21 +147,32 @@ async function spawnAgentSession(
   const agents = ctx.reflect.get('agents')
   if (agents === undefined)
     throw new TaskboardError('not-found', 'no agent registry in this profile')
-  const selection = ctx.reflect.get('agentDefaultModel', false)?.currentSelection?.()
+  const defaultModel = ctx.reflect.get('agentDefaultModel', false)
+  if (defaultModel === undefined) {
+    throw new TaskboardError(
+      'not-found',
+      'no default model selection is available for a task session',
+    )
+  }
+  const selection: ModelSelection = defaultModel.currentSelection()
   const presets = ctx.reflect.get('agentPresets', false)
-  const preset = await presets?.resolve(options.presetId).catch(() => undefined)
+  if (presets === undefined) {
+    throw new TaskboardError(
+      'not-found',
+      'no agent preset registry is available for a task session',
+    )
+  }
+  const preset = await presets.resolve(options.presetId)
   const handle = await agents.create({
     sessionId: SessionId(crypto.randomUUID()),
     meta: {
       cwd: options.cwd,
-      ...(preset !== undefined ? { agentPreset: preset.id } : {}),
+      agentPreset: preset.id,
     },
-    ...(selection !== undefined
-      ? { agentOptions: { provider: selection.provider, model: selection.model } }
-      : {}),
+    agentOptions: { provider: selection.provider, model: selection.model },
     setup: async (agentCtx: Context) => {
-      if (selection !== undefined) installModelSelection(agentCtx, selectionRefFor(selection))
-      if (presets !== undefined && preset !== undefined) await presets.mount(agentCtx, preset.id)
+      installModelSelection(agentCtx, selectionRefFor(selection))
+      await presets.mount(agentCtx, preset.id)
       await options.configure?.(agentCtx)
     },
   })

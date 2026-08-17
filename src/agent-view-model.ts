@@ -1,5 +1,6 @@
 /** Pure projections shared by the host tests and the browser's agent roster. */
 import type { AgentProfile, Task } from './domain.ts'
+import { LOCAL_USER_ID } from './local-user.ts'
 
 /** Roster lens matching Multica's list tabs. */
 export type AgentScope = 'mine' | 'all' | 'archived'
@@ -45,14 +46,27 @@ export function agentWorkSummary(agent: AgentProfile, tasks: readonly Task[]): A
   const executions = work.flatMap(task =>
     task.executions.filter(execution => execution.agentProfileId === agent.id),
   )
-  const lastActiveAt = work.reduce<string | undefined>(
-    (latest, task) => (latest === undefined || task.updatedAt > latest ? task.updatedAt : latest),
-    undefined,
-  )
+  const activityTimes = executions.flatMap(execution => [
+    execution.startedAt,
+    ...(execution.endedAt !== undefined ? [execution.endedAt] : []),
+  ])
+  const lastActiveAt =
+    activityTimes.length === 0
+      ? undefined
+      : new Date(
+          Math.max(...activityTimes.map(timestamp => new Date(timestamp).getTime())),
+        ).toISOString()
   return {
     tasks: work.length,
     runs: executions.length,
-    running: work.filter(task => task.status === 'in_progress').length,
+    running: work.filter(
+      task =>
+        task.agentProfileId === agent.id &&
+        task.status === 'in_progress' &&
+        task.executions.some(
+          execution => execution.agentProfileId === agent.id && execution.endedAt === undefined,
+        ),
+    ).length,
     succeeded: executions.filter(execution => execution.result === 'succeeded').length,
     failed: executions.filter(execution => execution.result === 'failed').length,
     ...(lastActiveAt !== undefined ? { lastActiveAt } : {}),
@@ -63,7 +77,7 @@ export function agentWorkSummary(agent: AgentProfile, tasks: readonly Task[]): A
 export function agentScopeCounts(agents: readonly AgentProfile[]): Record<AgentScope, number> {
   const active = agents.filter(agent => agent.archivedAt === undefined)
   return {
-    mine: active.filter(agent => agent.ownerId === 'local-user').length,
+    mine: active.filter(agent => agent.ownerId === LOCAL_USER_ID).length,
     all: active.length,
     archived: agents.length - active.length,
   }
@@ -82,7 +96,7 @@ export function filterAgentRows(options: {
     .filter(agent => {
       if (options.scope === 'archived') return agent.archivedAt !== undefined
       if (agent.archivedAt !== undefined) return false
-      return options.scope !== 'mine' || agent.ownerId === 'local-user'
+      return options.scope !== 'mine' || agent.ownerId === LOCAL_USER_ID
     })
     .filter(
       agent =>

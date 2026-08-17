@@ -44,7 +44,7 @@ The task workspace, inbox, and user-created agent interaction model are inspired
 | Task Hub Sidebar         | Persistent Tasks, Inbox, and Agents entries open one workspace-native hub; task cards drag between status columns and open as full documents with a property inspector                                                                                                                                                         |
 | Multica-style Task Flow  | Full-height status columns, dense task cards, ownership scopes, and a wide task composer with manual and agent-assisted modes are adapted to Harness theme tokens                                                                                                                                                              |
 | User-Created Agents      | A Multica-inspired roster and full-page creation/detail flow keeps identity, owner, access, standing instructions, runtime preset, concurrency, workload, and real execution statistics together; the AI Builder starts a persistent logged Harness conversation and saves the confirmed profile through a session-scoped tool |
-| Human Inbox              | Proposals, completed work awaiting review, failed executions, and cross-agent mail arrive in one read/archive queue with task, review, and session actions                                                                                                                                                                     |
+| Human Inbox              | Proposals, completed work awaiting review, failed executions, and cross-agent mail arrive in one read/archive queue with task, review, and session actions; review events remain available after acceptance or send-back so their read/archive state can be completed                                                          |
 
 ---
 
@@ -56,7 +56,7 @@ These screenshots were captured from the plugin running in a local DeepSeek Harn
 
 ![Real DeepSeek Harness task board with project filters, scheduler controls, and status columns](docs/assets/task-board.png)
 
-**Task detail**: clicking anywhere on a task card opens its full document with the description, assignment, execution history, bound session, schedule, activity trail, and editable properties:
+**Task detail**: clicking anywhere on a task card opens its full document with the description, assignment, execution history, bound session, schedule, activity trail, and editable properties. "Open session" selects that exact execution session and returns the conversation ring to Chat, so the task prompt and live result are visible immediately:
 
 ![Real task detail with execution status and property inspector inside DeepSeek Harness](docs/assets/task-detail.png)
 
@@ -250,6 +250,9 @@ src/
 ├── wire.ts                         # Shared browser <-> host RPC types
 └── index.ts                        # Plugin entry: mounts every face
 test/                    # node:test suites
+  snapshots/             # Keyless expected model-visible Builder transcript and confirmed write
+examples/
+  builder-session-replay.mjs # Runnable concrete agent-loop replay used by the snapshot
 skills/manage-taskboard/  # Bundled working-agreement skill
 docs/                     # Extension-point research notes
 ```
@@ -270,10 +273,11 @@ docs/                     # Extension-point research notes
 
 ### Build & Test
 
-| Technology          | Purpose                                                                  |
-| ------------------- | ------------------------------------------------------------------------ |
-| esbuild             | Bundles the browser half into the client-module envelope the host serves |
-| Node.js test runner | `node --test`, no test framework dependency                              |
+| Technology          | Purpose                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| esbuild             | Bundles the browser half into the client-module envelope the host serves                                                              |
+| Node.js test runner | `node --test`, no test framework dependency                                                                                           |
+| Keyless snapshot    | `npm run test:snapshot`, runs the concrete Builder example and verifies its prompt, preset, tool schema, and confirmed durable result |
 
 ---
 

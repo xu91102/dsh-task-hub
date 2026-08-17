@@ -12,6 +12,7 @@
  */
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
+import { LOCAL_USER_ID } from './local-user.ts'
 
 /** Branded record keys — plain strings on the medium, distinct at compile time. */
 export type ProjectId = string & { readonly __brand: 'ProjectId' }
@@ -262,7 +263,7 @@ const agentProfileSchema = z.object({
   id: z.string(),
   projectId: z.string(),
   /** Local owner identity; fixed at creation because this plugin has one user. */
-  ownerId: z.string().default('local-user'),
+  ownerId: z.string().default(LOCAL_USER_ID),
   name: z.string(),
   description: z.string().default(''),
   instructions: z.string().default(''),

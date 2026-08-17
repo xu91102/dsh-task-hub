@@ -28,6 +28,7 @@ import {
   WorkspaceTaskHubSidebarEntry,
 } from './sidebar.tsx'
 import { installStyles } from './styles.ts'
+import { openConversationView } from './view-control.ts'
 import { TaskHubWorkspace } from './workspace.tsx'
 
 /** Slot entry id; also the persisted active-view key. */
@@ -50,6 +51,7 @@ export const inject = ['slots', 'sessions', 'workspaces', 'locale']
 function openSessionWhenListed(ctx: ClientContext, id: string): void {
   const open = (): void => {
     ctx.sessions.open(id as Parameters<typeof ctx.sessions.open>[0])
+    openConversationView(ctx, id)
   }
   try {
     open()

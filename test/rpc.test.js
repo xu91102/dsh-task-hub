@@ -224,6 +224,44 @@ test('a valid call dispatches to the service, attributed to the local user', asy
   assert.equal(typeof projects[0].createdAt, 'string')
 })
 
+test('agent create rejects an invalid wire visibility before persistence', async () => {
+  const { board, routes } = await rpcFixture()
+  await board.createProject({ id: 'p1', name: 'Demo' })
+
+  const res = await post(routes, 'agent.create', {
+    projectId: 'p1',
+    name: 'Unsafe agent',
+    presetId: 'standard',
+    visibility: 'public',
+  })
+
+  assert.equal(res.statusCode, 409)
+  assert.equal(payload(res).code, 'invalid-input')
+  assert.deepEqual(board.listAgentProfiles('p1'), [])
+})
+
+test('agent update rejects an invalid wire visibility without changing the record', async () => {
+  const { board, routes } = await rpcFixture()
+  await board.createProject({ id: 'p1', name: 'Demo' })
+  const agent = await board.createAgentProfile({
+    projectId: 'p1',
+    name: 'Safe agent',
+    presetId: 'standard',
+    visibility: 'private',
+  })
+
+  const res = await post(routes, 'agent.update', {
+    id: agent.id,
+    expectedVersion: agent.version,
+    patch: { visibility: 'public' },
+  })
+
+  assert.equal(res.statusCode, 409)
+  assert.equal(payload(res).code, 'invalid-input')
+  assert.equal(board.getAgentProfile(agent.id).visibility, 'private')
+  assert.equal(board.getAgentProfile(agent.id).version, agent.version)
+})
+
 test('task.get assembles the detail bundle in one round trip', async () => {
   const { board, routes } = await rpcFixture()
   await board.createProject({ id: 'p1', name: 'Demo' })

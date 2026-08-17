@@ -104,7 +104,7 @@ test('agent summary and create validity come from durable execution/config facts
     running: 1,
     succeeded: 1,
     failed: 0,
-    lastActiveAt: '2026-08-14T00:00:00.000Z',
+    lastActiveAt: '2026-08-10T00:00:00.000Z',
   })
   assert.equal(
     isAgentDraftValid({ name: ' ', presetId: 'standard', visibility: 'private', concurrency: 1 }),
@@ -128,4 +128,43 @@ test('agent summary and create validity come from durable execution/config facts
     }),
     false,
   )
+})
+
+test('reassignment does not leave the previous agent online or borrow later task activity', () => {
+  const previous = agent('Previous')
+  const current = agent('Current')
+  const reassigned = task('reassigned', {
+    agentProfileId: current.id,
+    status: 'in_progress',
+    updatedAt: '2026-08-15T00:00:00.000Z',
+    executions: [
+      execution({
+        agentProfileId: previous.id,
+        startedAt: Date.parse('2026-08-10T00:00:00.000Z'),
+        endedAt: Date.parse('2026-08-11T00:00:00.000Z'),
+        result: 'succeeded',
+      }),
+      execution({
+        agentProfileId: current.id,
+        startedAt: Date.parse('2026-08-15T00:00:00.000Z'),
+      }),
+    ],
+  })
+
+  assert.deepEqual(agentWorkSummary(previous, [reassigned]), {
+    tasks: 1,
+    runs: 1,
+    running: 0,
+    succeeded: 1,
+    failed: 0,
+    lastActiveAt: '2026-08-11T00:00:00.000Z',
+  })
+  assert.deepEqual(agentWorkSummary(current, [reassigned]), {
+    tasks: 1,
+    runs: 1,
+    running: 1,
+    succeeded: 0,
+    failed: 0,
+    lastActiveAt: '2026-08-15T00:00:00.000Z',
+  })
 })

@@ -66,6 +66,11 @@ export class TaskboardError extends Error {
   }
 }
 
+/** Whether an untrusted value is a supported agent visibility. */
+function isAgentVisibility(value: unknown): value is AgentProfile['visibility'] {
+  return value === 'private' || value === 'workspace'
+}
+
 /** Filter for {@link Taskboard.listTasks}; omitted fields do not constrain. */
 export interface TaskFilter {
   projectId?: string
@@ -235,6 +240,9 @@ export class Taskboard extends Service {
     if (input.name.trim() === '') throw new TaskboardError('invalid-input', 'agent name is empty')
     if (input.presetId.trim() === '')
       throw new TaskboardError('invalid-input', 'agent preset is empty')
+    if (input.visibility !== undefined && !isAgentVisibility(input.visibility)) {
+      throw new TaskboardError('invalid-input', 'agent visibility must be private or workspace')
+    }
     const concurrency = input.concurrency ?? 1
     if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 50) {
       throw new TaskboardError('invalid-input', 'agent concurrency must be an integer from 1 to 50')
@@ -284,6 +292,9 @@ export class Taskboard extends Service {
       const concurrency = patch.concurrency
       if (name === '') throw new TaskboardError('invalid-input', 'agent name is empty')
       if (presetId === '') throw new TaskboardError('invalid-input', 'agent preset is empty')
+      if (patch.visibility !== undefined && !isAgentVisibility(patch.visibility)) {
+        throw new TaskboardError('invalid-input', 'agent visibility must be private or workspace')
+      }
       if (
         concurrency !== undefined &&
         (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 50)
@@ -781,9 +792,11 @@ export class Taskboard extends Service {
     })
 
     if (patch.status !== undefined && patch.status !== before.status) {
+      const executionId = patch.status === 'in_review' ? next.executions.at(-1)?.id : undefined
       await this.record(id as TaskId, 'status', opts.actor, {
         from: before.status,
         to: patch.status,
+        ...(executionId !== undefined ? { executionId } : {}),
       })
     }
     if (cleaned.projectId !== undefined && cleaned.projectId !== before.projectId) {
@@ -985,22 +998,43 @@ export class Taskboard extends Service {
           ...(task.proposedBy !== undefined ? { agentName: task.proposedBy.agent } : {}),
         })
       }
-      if (task.status === 'in_review') {
+      const reviewActivities = this.listActivity(task.id).filter(
+        activity => activity.kind === 'status' && activity.detail.to === 'in_review',
+      )
+      const reviewEvents =
+        reviewActivities.length > 0
+          ? reviewActivities.map(activity => {
+              const recordedExecutionId =
+                typeof activity.detail.executionId === 'string'
+                  ? activity.detail.executionId
+                  : undefined
+              const activityTime = Date.parse(activity.createdAt)
+              const execution =
+                task.executions.find(candidate => candidate.id === recordedExecutionId) ??
+                [...task.executions]
+                  .reverse()
+                  .find(candidate => candidate.startedAt <= activityTime)
+              return { id: activity.id, createdAt: activity.createdAt, execution }
+            })
+          : task.status === 'in_review'
+            ? [{ id: 'initial', createdAt: task.updatedAt, execution: latest }]
+            : []
+      for (const review of reviewEvents) {
+        const execution = review.execution
         items.push({
-          id: `review:${task.id}:${latest?.id ?? 'current'}`,
+          id: `review:${task.id}:${review.id}`,
           projectId,
           type: 'review_ready',
           taskId: task.id,
           title: task.title,
           summary: '任务已完成，等待你的审核。',
-          createdAt:
-            latest?.endedAt !== undefined ? new Date(latest.endedAt).toISOString() : task.updatedAt,
-          ...(latest?.agentName !== undefined
-            ? { agentName: latest.agentName }
+          createdAt: review.createdAt,
+          ...(execution?.agentName !== undefined
+            ? { agentName: execution.agentName }
             : task.assignee !== undefined
               ? { agentName: task.assignee.name }
               : {}),
-          ...(latest?.sessionId !== undefined ? { sessionId: latest.sessionId } : {}),
+          ...(execution?.sessionId !== undefined ? { sessionId: execution.sessionId } : {}),
         })
       }
       if (latest?.result === 'failed') {
