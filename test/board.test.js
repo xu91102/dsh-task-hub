@@ -18,6 +18,7 @@ import {
   reconcileWorkspaceMembership,
   resolveProject,
   selectionRefFor,
+  startAgentBuilder,
   startNextTask,
   startTask,
 } from '../lib/session-link.js'
@@ -482,6 +483,28 @@ test('starting an issue opens a fresh session, moves it, and hands it over', asy
   assert.deepEqual(kinds, ['created', 'status', 'session'])
 })
 
+test('AI agent builder opens a real logged Harness conversation', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+
+  const result = await fromRestrictedFiber(ctx, child =>
+    startAgentBuilder(child, board, {
+      projectId: 'p1',
+      presetId: 'coding-runtime',
+      description: '负责 TypeScript 功能开发和回归验证',
+    }),
+  )
+
+  const entry = ctx.agents.entries[0]
+  assert.equal(entry.agent.id, result.sessionId)
+  assert.equal(entry.options.meta.cwd, '/repo')
+  assert.equal(entry.options.meta.agentPreset, 'coding-runtime')
+  assert.equal(entry.agent.followups.length, 1)
+  assert.match(entry.agent.followups[0].content[0].text, /TypeScript 功能开发/)
+  assert.match(entry.agent.followups[0].content[0].text, /Standing instructions/)
+  assert.deepEqual(ctx.goals.created, [{ objective: 'Design a user-created agent profile' }])
+})
+
 test('user-created agents keep identity separate from their Harness preset', async () => {
   const { board, ctx } = await boardFixture({ withAgents: true })
   await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
@@ -519,14 +542,26 @@ test('agent profiles support versioned edits and reversible archive', async () =
     projectId: 'p1',
     name: 'Reviewer',
     presetId: 'review-runtime',
+    visibility: 'workspace',
+    concurrency: 2,
   })
+  assert.equal(created.ownerId, 'local-user')
+  assert.equal(created.visibility, 'workspace')
+  assert.equal(created.concurrency, 2)
   const updated = await board.updateAgentProfile(
     created.id,
-    { name: 'Lead reviewer', instructions: 'Check every acceptance condition.' },
+    {
+      name: 'Lead reviewer',
+      instructions: 'Check every acceptance condition.',
+      visibility: 'private',
+      concurrency: 3,
+    },
     created.version,
   )
   assert.equal(updated.version, 1)
   assert.equal(updated.name, 'Lead reviewer')
+  assert.equal(updated.visibility, 'private')
+  assert.equal(updated.concurrency, 3)
   await assert.rejects(
     () => board.updateAgentProfile(created.id, { name: 'Stale' }, created.version),
     err => err instanceof TaskboardError && err.code === 'version-conflict',
@@ -538,6 +573,40 @@ test('agent profiles support versioned edits and reversible archive', async () =
   assert.equal(board.listAgentProfiles('p1', true).length, 1)
   const restored = await board.setAgentProfileArchived(archived.id, false, archived.version)
   assert.equal(restored.archivedAt, undefined)
+})
+
+test('agent profile concurrency is validated and limits live assigned work', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+  await assert.rejects(
+    () =>
+      board.createAgentProfile({
+        projectId: 'p1',
+        name: 'Invalid',
+        presetId: 'standard',
+        concurrency: 0,
+      }),
+    err => err instanceof TaskboardError && err.code === 'invalid-input',
+  )
+  const profile = await board.createAgentProfile({
+    projectId: 'p1',
+    name: 'One at a time',
+    presetId: 'standard',
+    concurrency: 1,
+  })
+  const first = await board.createTask(
+    { projectId: 'p1', title: 'First', agentProfileId: profile.id },
+    human,
+  )
+  const second = await board.createTask(
+    { projectId: 'p1', title: 'Second', agentProfileId: profile.id },
+    human,
+  )
+  await fromRestrictedFiber(ctx, child => startTask(child, board, first.id))
+  await assert.rejects(
+    () => fromRestrictedFiber(ctx, child => startTask(child, board, second.id)),
+    err => err instanceof TaskboardError && err.code === 'forbidden',
+  )
 })
 
 test('the inbox derives actionable events and persists read and archive state', async () => {

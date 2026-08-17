@@ -154,6 +154,11 @@ export interface TaskboardApi {
     result: AgentProfile[]
   }
   'agent.runtime.list': { params: Record<never, never>; result: AgentRuntimeOption[] }
+  /** Start a persistent, logged Harness conversation for AI-assisted profile design. */
+  'agent.builder.start': {
+    params: { projectId: string; presetId: string; description: string }
+    result: { sessionId: string }
+  }
   'agent.create': {
     params: {
       projectId: string
@@ -161,13 +166,20 @@ export interface TaskboardApi {
       description?: string
       instructions?: string
       presetId: string
+      visibility?: AgentProfile['visibility']
+      concurrency?: number
     }
     result: AgentProfile
   }
   'agent.update': {
     params: {
       id: string
-      patch: Partial<Pick<AgentProfile, 'name' | 'description' | 'instructions' | 'presetId'>>
+      patch: Partial<
+        Pick<
+          AgentProfile,
+          'name' | 'description' | 'instructions' | 'presetId' | 'visibility' | 'concurrency'
+        >
+      >
       expectedVersion?: number
     }
     result: AgentProfile
@@ -212,6 +224,7 @@ export const TASKBOARD_METHODS = [
   'message.post',
   'agent.list',
   'agent.runtime.list',
+  'agent.builder.start',
   'agent.create',
   'agent.update',
   'agent.archive',

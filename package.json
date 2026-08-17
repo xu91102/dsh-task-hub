@@ -40,7 +40,7 @@
     "NOTICE"
   ],
   "scripts": {
-    "postinstall": "node scripts/patch-ui-sidebar-client.mjs && node scripts/patch-ui-conversation-client.mjs",
+    "postinstall": "node scripts/patch-ui-sidebar-client.mjs && node scripts/patch-ui-workspace-client.mjs && node scripts/patch-ui-conversation-client.mjs",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/build-client.mjs",
     "prepack": "npm run build",
     "pretest": "node scripts/ensure-lib.mjs",
@@ -49,7 +49,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run build && npm test",
-    "patch:clients": "node scripts/patch-ui-sidebar-client.mjs && node scripts/patch-ui-conversation-client.mjs"
+    "patch:clients": "node scripts/patch-ui-sidebar-client.mjs && node scripts/patch-ui-workspace-client.mjs && node scripts/patch-ui-conversation-client.mjs"
   },
   "dsh": {
     "bundle": {

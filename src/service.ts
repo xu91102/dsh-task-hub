@@ -12,6 +12,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-storage-domain'
+import { LOCAL_USER } from './actors.ts'
 import {
   canTransition,
   taskboardDomain,
@@ -225,6 +226,8 @@ export class Taskboard extends Service {
     description?: string
     instructions?: string
     presetId: string
+    visibility?: AgentProfile['visibility']
+    concurrency?: number
   }): Promise<AgentProfile> {
     if (this.projects.get(input.projectId as ProjectId) === undefined) {
       throw new TaskboardError('not-found', `project "${input.projectId}" does not exist`)
@@ -232,14 +235,21 @@ export class Taskboard extends Service {
     if (input.name.trim() === '') throw new TaskboardError('invalid-input', 'agent name is empty')
     if (input.presetId.trim() === '')
       throw new TaskboardError('invalid-input', 'agent preset is empty')
+    const concurrency = input.concurrency ?? 1
+    if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 50) {
+      throw new TaskboardError('invalid-input', 'agent concurrency must be an integer from 1 to 50')
+    }
     const now = new Date().toISOString()
     const agent: AgentProfile = {
       id: crypto.randomUUID(),
       projectId: input.projectId,
+      ownerId: LOCAL_USER.id,
       name: input.name.trim(),
       description: input.description?.trim() ?? '',
       instructions: input.instructions?.trim() ?? '',
       presetId: input.presetId,
+      visibility: input.visibility ?? 'private',
+      concurrency,
       version: 0,
       createdAt: now,
       updatedAt: now,
@@ -251,7 +261,12 @@ export class Taskboard extends Service {
   /** Edit identity, behavior, or runtime while refusing stale forms. */
   async updateAgentProfile(
     id: string,
-    patch: Partial<Pick<AgentProfile, 'name' | 'description' | 'instructions' | 'presetId'>>,
+    patch: Partial<
+      Pick<
+        AgentProfile,
+        'name' | 'description' | 'instructions' | 'presetId' | 'visibility' | 'concurrency'
+      >
+    >,
     expectedVersion?: number,
   ): Promise<AgentProfile> {
     if (this.agents.get(id as AgentProfileId) === undefined) {
@@ -266,14 +281,26 @@ export class Taskboard extends Service {
       }
       const name = patch.name?.trim()
       const presetId = patch.presetId?.trim()
+      const concurrency = patch.concurrency
       if (name === '') throw new TaskboardError('invalid-input', 'agent name is empty')
       if (presetId === '') throw new TaskboardError('invalid-input', 'agent preset is empty')
+      if (
+        concurrency !== undefined &&
+        (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 50)
+      ) {
+        throw new TaskboardError(
+          'invalid-input',
+          'agent concurrency must be an integer from 1 to 50',
+        )
+      }
       return {
         ...current,
         ...(name !== undefined ? { name } : {}),
         ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
         ...(patch.instructions !== undefined ? { instructions: patch.instructions.trim() } : {}),
         ...(presetId !== undefined ? { presetId } : {}),
+        ...(patch.visibility !== undefined ? { visibility: patch.visibility } : {}),
+        ...(concurrency !== undefined ? { concurrency } : {}),
         version: current.version + 1,
         updatedAt: new Date().toISOString(),
       }

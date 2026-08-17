@@ -128,6 +128,106 @@ export function selectionRefFor(selection: ModelSelection | undefined): ModelSel
 }
 
 /**
+ * Create one persistent Harness agent session with the selected preset.
+ * @param ctx - Context with an agent registry.
+ * @param options.cwd - Working directory recorded on the session.
+ * @param options.presetId - Harness Agent Preset to mount.
+ * @returns the live agent after workspace attachment.
+ */
+async function spawnAgentSession(
+  ctx: Context,
+  options: { cwd: string; presetId?: string },
+): Promise<Agent> {
+  const agents = ctx.reflect.get('agents')
+  if (agents === undefined)
+    throw new TaskboardError('not-found', 'no agent registry in this profile')
+  const selection = ctx.reflect.get('agentDefaultModel', false)?.currentSelection?.()
+  const presets = ctx.reflect.get('agentPresets', false)
+  const preset = await presets?.resolve(options.presetId).catch(() => undefined)
+  const handle = await agents.create({
+    sessionId: SessionId(crypto.randomUUID()),
+    meta: {
+      cwd: options.cwd,
+      ...(preset !== undefined ? { agentPreset: preset.id } : {}),
+    },
+    ...(selection !== undefined
+      ? { agentOptions: { provider: selection.provider, model: selection.model } }
+      : {}),
+    setup: async (agentCtx: Context) => {
+      if (selection !== undefined) installModelSelection(agentCtx, selectionRefFor(selection))
+      if (presets !== undefined && preset !== undefined) await presets.mount(agentCtx, preset.id)
+    },
+  })
+  const agent: Agent = handle.agent
+  try {
+    const workspaces = ctx.reflect.get('workspaceRegistry', false)
+    if (workspaces !== undefined) {
+      const workspace =
+        (await workspaces.resolveByPath(options.cwd).catch(() => undefined)) ??
+        (await workspaces.create(options.cwd).catch(() => undefined))
+      if (workspace !== undefined) await workspace.attachSession(agent.id)
+    }
+  } catch (error) {
+    ctx.logger.warn('taskboard: could not attach the agent session to its workspace', error)
+  }
+  return agent
+}
+
+/**
+ * Start a logged Harness conversation that helps the user design an agent profile.
+ * @param ctx - Context with agents and optional goals/workspaces.
+ * @param board - Board containing the target project.
+ * @param options.projectId - Project whose workspace owns the builder session.
+ * @param options.presetId - Preset selected for the future agent.
+ * @param options.description - The user's initial description of the intended role.
+ * @returns the persistent builder session id.
+ */
+export async function startAgentBuilder(
+  ctx: Context,
+  board: Taskboard,
+  options: { projectId: string; presetId: string; description: string },
+): Promise<{ sessionId: string }> {
+  const project = board.getProject(options.projectId)
+  if (project === undefined) {
+    throw new TaskboardError('not-found', `project "${options.projectId}" does not exist`)
+  }
+  if (options.presetId.trim() === '') {
+    throw new TaskboardError('invalid-input', 'agent builder needs a Harness preset')
+  }
+  const description = options.description.trim()
+  if (description === '') {
+    throw new TaskboardError('invalid-input', 'agent builder needs a role description')
+  }
+  const agent = await spawnAgentSession(ctx, {
+    cwd: project.workspacePath ?? process.cwd(),
+    presetId: options.presetId,
+  })
+  try {
+    ctx.reflect.get('goals')?.create(agent, { objective: 'Design a user-created agent profile' })
+  } catch (error) {
+    ctx.logger.warn('taskboard: could not set the builder session goal', error)
+  }
+  agent.followup(
+    createUserMessage({
+      content: [
+        {
+          type: 'text',
+          text: [
+            'Help me create a reusable user-owned agent profile for this Harness workspace.',
+            'Ask focused questions about responsibilities, boundaries, workflow, quality checks, and reporting.',
+            'When the role is clear, produce a concise final profile with these exact sections:',
+            'Name, Description, Standing instructions, Recommended concurrency, Access scope.',
+            `Initial role description: ${description}`,
+          ].join('\n'),
+        },
+      ],
+      source: { kind: 'user' },
+    }),
+  )
+  return { sessionId: agent.id }
+}
+
+/**
  * Open a fresh session for one issue and hand it the work.
  *
  * The actor is the local user: starting work is a human act, or the scheduler
@@ -171,6 +271,20 @@ export async function startTask(
   if (profile?.archivedAt !== undefined) {
     throw new TaskboardError('forbidden', `agent "${profile.name}" is archived`)
   }
+  if (profile !== undefined) {
+    const runningForProfile = board
+      .listTasks({ status: 'in_progress' })
+      .filter(task => task.agentProfileId === profile.id)
+      .filter(
+        task => task.sessionId !== undefined && agents.get(SessionId(task.sessionId)) !== undefined,
+      ).length
+    if (runningForProfile >= profile.concurrency) {
+      throw new TaskboardError(
+        'forbidden',
+        `agent "${profile.name}" already has ${runningForProfile} live task(s); concurrency is ${profile.concurrency}`,
+      )
+    }
+  }
 
   // The issue's own project decides where its session runs, so work lands in the
   // repository the board belongs to. A project without a workspace path (the
@@ -187,52 +301,10 @@ export async function startTask(
   // kit (file tools, shell, skills). A preset-less session would be a
   // board-only agent that can look at issues but not do the work.
   const cwd = board.getProject(current.projectId)?.workspacePath ?? opts.cwd ?? process.cwd()
-  const selection = ctx.reflect.get('agentDefaultModel', false)?.currentSelection?.()
-  const presets = ctx.reflect.get('agentPresets', false)
-  const preset = await presets?.resolve(profile?.presetId).catch(() => undefined)
-  const handle = await agents.create({
-    sessionId: SessionId(crypto.randomUUID()),
-    meta: {
-      cwd,
-      ...(preset !== undefined ? { agentPreset: preset.id } : {}),
-    },
-    // Without the provider/model pair, prompt assembly fails on the `{{model}}`
-    // variable. The effort travels separately through installModelSelection in
-    // setup — AgentOptions has no such field, and spreading it in would re-open
-    // the exact fidelity bug this fixes (reasoningEffort silently dropped).
-    ...(selection !== undefined
-      ? { agentOptions: { provider: selection.provider, model: selection.model } }
-      : {}),
-    // The registry factory does NOT join presets by itself — the web layer
-    // does it in its own setup wrapper. Without the join, the session's tool
-    // registry holds only the board tools. Mount inside setup, where a broken
-    // preset rolls the whole creation back. The callback returns void on
-    // purpose: a returned value is treated as an AgentSetupCommit.
-    setup: async (agentCtx: Context) => {
-      if (selection !== undefined) installModelSelection(agentCtx, selectionRefFor(selection))
-      if (presets !== undefined && preset !== undefined) await presets.mount(agentCtx, preset.id)
-    },
+  const agent = await spawnAgentSession(ctx, {
+    cwd,
+    ...(profile !== undefined ? { presetId: profile.presetId } : {}),
   })
-  const agent: Agent = handle.agent
-
-  // The sidebar groups sessions by workspace MEMBERSHIP (workspace.sessionIds),
-  // which is only established by `attachSession` — the web layer's create/fork
-  // paths call it, and a session created anywhere else would otherwise land in
-  // the "ungrouped" bucket even though it carries a cwd. Attach the fresh
-  // session to the workspace owning its cwd (creating that workspace when the
-  // directory is not yet owned, exactly as board resolution does). Best-effort:
-  // a profile without a workspace registry must still be able to start work.
-  try {
-    const workspaces = ctx.reflect.get('workspaceRegistry', false)
-    if (workspaces !== undefined) {
-      const workspace =
-        (await workspaces.resolveByPath(cwd).catch(() => undefined)) ??
-        (await workspaces.create(cwd).catch(() => undefined))
-      if (workspace !== undefined) await workspace.attachSession(agent.id)
-    }
-  } catch (error) {
-    ctx.logger.warn('taskboard: could not attach the issue session to its workspace', error)
-  }
 
   // Open the execution record AND bind the session / move to in_progress in one
   // atomic CAS, so the attempt is durable before the agent is handed the issue.

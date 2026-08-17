@@ -33,17 +33,17 @@ The task workspace, inbox, and user-created agent interaction model are inspired
 
 ## Features
 
-| Feature                  | Description                                                                                                                                                                                                                                                                         |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| One Board Per Repository | The board is bound to the session's working directory, not to the conversation: two sessions in the same repo share a board, and a session in another repo sees its own — the host resolves it, so the browser can never mix projects                                               |
-| Fresh Session Per Issue  | "Work on this" opens a brand-new session with the issue's brief and binds the issue to it, so every issue's transcript and cost are its own — and several can run at once                                                                                                           |
-| Auto-Pull Scheduler      | A scheduler keeps up to N issues in flight and refills from `todo` by itself — highest priority first — with live controls for concurrency and the auto-pull toggle in the board header                                                                                             |
-| Three Human Gates        | An agent can never move an issue out of `proposed`, can never mark one `done`, and can never shelve one as `archieved`: proposals need your approval, finished work needs your acceptance, and archiving accepted work is yours too — all enforced in the service layer, not the UI |
-| Durable Approval Queue   | Agent-proposed issues land in a `proposed` column and stay there until a human approves or rejects them — durable across restarts, unlike a one-shot approval prompt                                                                                                                |
-| Board as a Chat Peer     | The board registers into the conversation view ring, so it appears as a tab beside Chat and Trajectory instead of a separate page                                                                                                                                                   |
-| Task Hub Sidebar         | Persistent Tasks, Inbox, and Agents entries open one workspace-native hub; task cards drag between status columns and open as full documents with a property inspector                                                                                                              |
-| User-Created Agents      | Users create durable agent identities with a name, responsibility, standing instructions, and a Harness Agent Preset; assignments and execution history retain that identity instead of treating the preset as the agent                                                            |
-| Human Inbox              | Proposals, completed work awaiting review, failed executions, and cross-agent mail arrive in one read/archive queue with task, review, and session actions                                                                                                                          |
+| Feature                  | Description                                                                                                                                                                                                                                                                                               |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One Board Per Repository | The board is bound to the session's working directory, not to the conversation: two sessions in the same repo share a board, and a session in another repo sees its own — the host resolves it, so the browser can never mix projects                                                                     |
+| Fresh Session Per Issue  | "Work on this" opens a brand-new session with the issue's brief and binds the issue to it, so every issue's transcript and cost are its own — and several can run at once                                                                                                                                 |
+| Auto-Pull Scheduler      | A scheduler keeps up to N issues in flight and refills from `todo` by itself — highest priority first — with live controls for concurrency and the auto-pull toggle in the board header                                                                                                                   |
+| Three Human Gates        | An agent can never move an issue out of `proposed`, can never mark one `done`, and can never shelve one as `archieved`: proposals need your approval, finished work needs your acceptance, and archiving accepted work is yours too — all enforced in the service layer, not the UI                       |
+| Durable Approval Queue   | Agent-proposed issues land in a `proposed` column and stay there until a human approves or rejects them — durable across restarts, unlike a one-shot approval prompt                                                                                                                                      |
+| Board as a Chat Peer     | The board registers into the conversation view ring, so it appears as a tab beside Chat and Trajectory instead of a separate page                                                                                                                                                                         |
+| Task Hub Sidebar         | Persistent Tasks, Inbox, and Agents entries open one workspace-native hub; task cards drag between status columns and open as full documents with a property inspector                                                                                                                                    |
+| User-Created Agents      | A Multica-inspired roster and full-page creation/detail flow keeps identity, owner, access, standing instructions, runtime preset, concurrency, workload, and real execution statistics together; the AI Builder starts a persistent logged Harness conversation instead of simulating one in the browser |
+| Human Inbox              | Proposals, completed work awaiting review, failed executions, and cross-agent mail arrive in one read/archive queue with task, review, and session actions                                                                                                                                                |
 
 ---
 
@@ -190,23 +190,23 @@ The browser half never talks to storage directly. Every read and write goes thro
 
 The browser half talks to the host half over one endpoint, `POST /_dsh/taskboard/rpc`, with `{ method, params }` in the body, rather than one REST path per resource. DeepSeek Harness's typed RPC layer requires build-time code generation this plugin's build does not run, so the route is deliberately explicit — see [docs/spike-findings.md](docs/spike-findings.md) for why.
 
-| Method                | Description                                                                                    |
-| --------------------- | ---------------------------------------------------------------------------------------------- |
-| `board.view`          | The board this session belongs to (resolved from its workspace), with live scheduler state     |
-| `project.list`        | List every project                                                                             |
-| `project.create`      | Create a project                                                                               |
-| `task.list`           | List issues, optionally filtered by project, status, or session                                |
-| `task.get`            | Read one issue with its comments and activity trail                                            |
-| `task.create`         | Create an issue                                                                                |
-| `task.update`         | Change an issue; refuses a stale `expectedVersion`                                             |
-| `comment.create`      | Add a comment to an issue                                                                      |
-| `task.start`          | Open a FRESH session for one issue and hand it the work                                        |
-| `task.startNext`      | Start the next `todo` issue — highest priority first — without naming one                      |
-| `task.accept`         | Accept finished work (`in_review` → `done`) — the human gate no agent can pass                 |
-| `task.sendBack`       | Send finished work back to `todo` with a reason (recorded as a comment), unbinding its session |
-| `scheduler.configure` | Change concurrency or the auto-pull toggle; returns the resulting state                        |
-| `agent.*`             | List, create, edit, archive, and restore user-created agents and list Harness runtime presets  |
-| `inbox.*`             | List derived human inbox events and persist read/archive state                                 |
+| Method                | Description                                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `board.view`          | The board this session belongs to (resolved from its workspace), with live scheduler state                                                 |
+| `project.list`        | List every project                                                                                                                         |
+| `project.create`      | Create a project                                                                                                                           |
+| `task.list`           | List issues, optionally filtered by project, status, or session                                                                            |
+| `task.get`            | Read one issue with its comments and activity trail                                                                                        |
+| `task.create`         | Create an issue                                                                                                                            |
+| `task.update`         | Change an issue; refuses a stale `expectedVersion`                                                                                         |
+| `comment.create`      | Add a comment to an issue                                                                                                                  |
+| `task.start`          | Open a FRESH session for one issue and hand it the work                                                                                    |
+| `task.startNext`      | Start the next `todo` issue — highest priority first — without naming one                                                                  |
+| `task.accept`         | Accept finished work (`in_review` → `done`) — the human gate no agent can pass                                                             |
+| `task.sendBack`       | Send finished work back to `todo` with a reason (recorded as a comment), unbinding its session                                             |
+| `scheduler.configure` | Change concurrency or the auto-pull toggle; returns the resulting state                                                                    |
+| `agent.*`             | List, create, edit, archive, and restore user-created agents, list Harness runtime presets, and start a persistent AI Builder conversation |
+| `inbox.*`             | List derived human inbox events and persist read/archive state                                                                             |
 
 Change notifications stream over `GET /_dsh/taskboard/events` as Server-Sent Events.
 
@@ -218,7 +218,7 @@ Change notifications stream over `GET /_dsh/taskboard/events` as Server-Sent Eve
 src/
 ├── client/              # Browser half
 │   ├── board.tsx         # BoardView: columns, cards, scheduler strip, approval + acceptance controls
-│   ├── agents.tsx         # User-created agent roster, editor, detail, runtime and recent work
+│   ├── agents.tsx         # Agent roster, creation methods, configuration, detail tabs and real work statistics
 │   ├── inbox.tsx          # Event rail and actionable inbox detail
 │   ├── workspace.tsx      # Tasks / Inbox / Agents workspace router
 │   ├── index.tsx          # Client plugin entry, slot registration

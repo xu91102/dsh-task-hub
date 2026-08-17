@@ -11,10 +11,9 @@
  * `single` and occupied, so taking those seats replaces dsh's whole conversation
  * surface (and collapses every seat it declares) instead of adding to it.
  *
- * The sidebar presence is additive too: a "Taskboard" entry in
- * `sidebar.footer.action` (below the project-folder box) and a "New taskboard"
- * button in `sidebar.action.top` (below New Session — a slot only the patched
- * sidebar shell renders, see scripts/patch-ui-sidebar-client.mjs).
+ * The sidebar presence mirrors Multica's hierarchy: New Task and Inbox use the
+ * top action area; Tasks and Agents use the Workspace group immediately before
+ * the session tree. The two additive holes come from the client patch scripts.
  * @module dsh-task-hub/client
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
@@ -22,10 +21,11 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import {
+  InboxSidebarEntry,
   NewTaskboardSidebarEntry,
   openTaskboardFromSidebar,
-  TaskboardSidebarEntry,
   type TaskboardKey,
+  WorkspaceTaskHubSidebarEntry,
 } from './sidebar.tsx'
 import { installStyles } from './styles.ts'
 import { TaskHubWorkspace } from './workspace.tsx'
@@ -108,7 +108,7 @@ const en: Record<TaskboardKey, string> = {
 }
 
 /**
- * Register the board as a conversation view plus its two sidebar entries.
+ * Register the board as a conversation view plus its grouped sidebar entries.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -130,29 +130,7 @@ export function apply(ctx: ClientContext): void {
     ),
   )
 
-  // The entry row below the project-folder box.
-  ctx.slots.inject('sidebar.footer.action', () =>
-    ctx.slots.register(
-      {
-        name: 'sidebar.footer.action',
-        id: 'taskboard-entry',
-        order: 10,
-        locale: 'taskboard',
-      },
-      props => (
-        <TaskboardSidebarEntry
-          {...props}
-          onOpen={view => {
-            openTaskboardFromSidebar(ctx, view)
-          }}
-        />
-      ),
-    ),
-  )
-
-  // The "New taskboard" button below New Session. `slots.inject` runs the
-  // registration only while the slot is declared (patched shell), so an
-  // unpatched install degrades to a board without this button — no crash.
+  // Multica header order: create first, then personal navigation.
   ctx.slots.inject('sidebar.action.top', () =>
     ctx.slots.register(
       {
@@ -166,6 +144,44 @@ export function apply(ctx: ClientContext): void {
           {...props}
           onOpen={() => {
             openTaskboardFromSidebar(ctx, 'tasks')
+          }}
+        />
+      ),
+    ),
+  )
+  ctx.slots.inject('sidebar.action.top', () =>
+    ctx.slots.register(
+      {
+        name: 'sidebar.action.top',
+        id: 'taskboard-inbox',
+        order: 20,
+        locale: 'taskboard',
+      },
+      props => (
+        <InboxSidebarEntry
+          {...props}
+          onOpen={view => {
+            openTaskboardFromSidebar(ctx, view)
+          }}
+        />
+      ),
+    ),
+  )
+
+  // Multica Workspace group: product areas before the workspace/session list.
+  ctx.slots.inject('sidebar.workspaces.action', () =>
+    ctx.slots.register(
+      {
+        name: 'sidebar.workspaces.action',
+        id: 'taskboard-workspace-navigation',
+        order: 10,
+        locale: 'taskboard',
+      },
+      props => (
+        <WorkspaceTaskHubSidebarEntry
+          {...props}
+          onOpen={view => {
+            openTaskboardFromSidebar(ctx, view)
           }}
         />
       ),
