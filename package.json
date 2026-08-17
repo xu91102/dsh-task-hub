@@ -40,16 +40,18 @@
     "NOTICE"
   ],
   "scripts": {
-    "postinstall": "node scripts/patch-ui-sidebar-client.mjs && node scripts/patch-ui-conversation-client.mjs",
+    "postinstall": "node scripts/patch-ui-sidebar-client.mjs && node scripts/patch-ui-workspace-client.mjs && node scripts/patch-ui-conversation-client.mjs",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/build-client.mjs",
     "prepack": "npm run build",
     "pretest": "node scripts/ensure-lib.mjs",
     "test": "node --test test/*.test.js",
+    "pretest:snapshot": "node scripts/ensure-lib.mjs",
+    "test:snapshot": "node --test test/builder.snapshot.test.js",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run build && npm test",
-    "patch:clients": "node scripts/patch-ui-sidebar-client.mjs && node scripts/patch-ui-conversation-client.mjs"
+    "patch:clients": "node scripts/patch-ui-sidebar-client.mjs && node scripts/patch-ui-workspace-client.mjs && node scripts/patch-ui-conversation-client.mjs"
   },
   "dsh": {
     "bundle": {
@@ -88,6 +90,9 @@
   },
   "devDependencies": {
     "@deepseek-ai/dsh": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-agent-loop": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-agent-loop-testkit": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm-replay": "^0.1.0-rc.6",
     "@eslint/js": "^9.39.5",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.1",

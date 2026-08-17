@@ -9,6 +9,7 @@
  * @module dsh-task-hub/actors
  */
 import type { Actor } from './domain.ts'
+import { LOCAL_USER_ID } from './local-user.ts'
 
 /**
  * The person at the keyboard.
@@ -18,7 +19,7 @@ import type { Actor } from './domain.ts'
  * name; it would not make the board multi-user, which needs a real
  * authentication layer this plugin does not have.
  */
-export const LOCAL_USER: Actor = { type: 'user', id: 'local-user', name: 'Local user' }
+export const LOCAL_USER: Actor = { type: 'user', id: LOCAL_USER_ID, name: 'Local user' }
 
 /**
  * Attribution for an agent's own write.

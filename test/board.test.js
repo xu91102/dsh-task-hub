@@ -18,8 +18,10 @@ import {
   reconcileWorkspaceMembership,
   resolveProject,
   selectionRefFor,
+  startAgentBuilder,
   startNextTask,
   startTask,
+  startTaskBuilder,
 } from '../lib/session-link.js'
 
 /** One table over a Map, with the domain's write-chain semantics. */
@@ -127,6 +129,9 @@ async function boardFixture(options = {}) {
       }
       mounts = []
       async resolve(id) {
+        if (options.rejectPresetId !== undefined && id === options.rejectPresetId) {
+          throw new Error(`unknown preset: ${id}`)
+        }
         return { id: id ?? 'standard' }
       }
       async mount(ctx, id) {
@@ -135,8 +140,8 @@ async function boardFixture(options = {}) {
     }
     ctx.plugin(Agents)
     ctx.plugin(Goals)
-    ctx.plugin(DefaultModel)
-    ctx.plugin(Presets)
+    if (options.withoutDefaultModel !== true) ctx.plugin(DefaultModel)
+    if (options.withoutPresets !== true) ctx.plugin(Presets)
   }
   if (options.withSessions === true) {
     // The session store (main conversations) and the workspace registry, so the
@@ -425,6 +430,47 @@ function fromRestrictedFiber(ctx, body) {
   })
 }
 
+test('starting an issue refuses to publish a session without a default model', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true, withoutDefaultModel: true })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+  const task = await board.createTask({ projectId: 'p1', title: 'Do the thing' }, human)
+
+  await assert.rejects(
+    fromRestrictedFiber(ctx, child => startTask(child, board, task.id)),
+    /no default model selection is available/,
+  )
+  assert.equal(ctx.agents.entries.length, 0)
+})
+
+test('starting a builder refuses to publish a session when its selected preset cannot resolve', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true, rejectPresetId: 'missing-runtime' })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+
+  await assert.rejects(
+    fromRestrictedFiber(ctx, child =>
+      startAgentBuilder(child, board, {
+        projectId: 'p1',
+        presetId: 'missing-runtime',
+        description: '负责 TypeScript 功能开发',
+      }),
+    ),
+    /unknown preset: missing-runtime/,
+  )
+  assert.equal(ctx.agents.entries.length, 0)
+})
+
+test('starting an issue refuses to publish a session without a preset registry', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true, withoutPresets: true })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+  const task = await board.createTask({ projectId: 'p1', title: 'Do the thing' }, human)
+
+  await assert.rejects(
+    fromRestrictedFiber(ctx, child => startTask(child, board, task.id)),
+    /no agent preset registry is available/,
+  )
+  assert.equal(ctx.agents.entries.length, 0)
+})
+
 test('starting an issue opens a fresh session, moves it, and hands it over', async () => {
   const { board, ctx } = await boardFixture({ withAgents: true })
   await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
@@ -482,6 +528,102 @@ test('starting an issue opens a fresh session, moves it, and hands it over', asy
   assert.deepEqual(kinds, ['created', 'status', 'session'])
 })
 
+test('AI agent builder opens a real logged Harness conversation', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+
+  const result = await fromRestrictedFiber(ctx, child =>
+    startAgentBuilder(child, board, {
+      projectId: 'p1',
+      presetId: 'coding-runtime',
+      description: '负责 TypeScript 功能开发和回归验证',
+    }),
+  )
+
+  const entry = ctx.agents.entries[0]
+  assert.equal(entry.agent.id, result.sessionId)
+  assert.equal(entry.options.meta.cwd, '/repo')
+  assert.equal(entry.options.meta.agentPreset, 'coding-runtime')
+  assert.equal(entry.agent.followups.length, 1)
+  assert.match(entry.agent.followups[0].content[0].text, /TypeScript 功能开发/)
+  assert.match(entry.agent.followups[0].content[0].text, /Standing instructions/)
+  assert.match(entry.agent.followups[0].content[0].text, /agent_profile_create/)
+  assert.deepEqual(ctx.goals.created, [{ objective: 'Design a user-created agent profile' }])
+
+  const registered = []
+  await entry.options.setup({
+    on: () => () => {},
+    tools: {
+      register: tool => {
+        registered.push(tool)
+        return () => {}
+      },
+    },
+    effect: factory => factory(),
+  })
+  assert.equal(registered[0].name, 'agent_profile_create')
+  const created = await registered[0].execute({
+    name: 'TypeScript 开发',
+    description: '负责 TypeScript 功能开发',
+    instructions: '先确认范围，完成后运行测试。',
+    concurrency: 2,
+    visibility: 'workspace',
+  })
+  assert.equal(created.name, 'TypeScript 开发')
+  assert.equal(board.listAgentProfiles('p1')[0].presetId, 'coding-runtime')
+  assert.equal(board.listAgentProfiles('p1')[0].visibility, 'workspace')
+})
+
+test('AI task builder creates only through its confirmed session tool', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+  const profile = await board.createAgentProfile({
+    projectId: 'p1',
+    name: '主力开发',
+    presetId: 'coding-runtime',
+    instructions: '先澄清验收条件。',
+  })
+
+  const result = await fromRestrictedFiber(ctx, child =>
+    startTaskBuilder(child, board, {
+      projectId: 'p1',
+      description: '修复登录失败后的错误提示',
+      agentProfileId: profile.id,
+    }),
+  )
+
+  const entry = ctx.agents.entries[0]
+  assert.equal(entry.agent.id, result.sessionId)
+  assert.equal(entry.options.meta.cwd, '/repo')
+  assert.equal(entry.options.meta.agentPreset, 'coding-runtime')
+  assert.equal(board.listTasks({ projectId: 'p1' }).length, 0)
+  assert.match(entry.agent.followups[0].content[0].text, /explicit confirmation/)
+  assert.match(entry.agent.followups[0].content[0].text, /task_create_confirmed/)
+  assert.match(entry.agent.followups[0].content[0].text, /登录失败/)
+  assert.deepEqual(ctx.goals.created, [{ objective: 'Create a confirmed board task' }])
+
+  const registered = []
+  await entry.options.setup({
+    on: () => () => {},
+    tools: {
+      register: tool => {
+        registered.push(tool)
+        return () => {}
+      },
+    },
+    effect: factory => factory(),
+  })
+  assert.equal(registered[0].name, 'task_create_confirmed')
+  const created = await registered[0].execute({
+    title: '修复登录错误提示',
+    description: '复现失败状态并补充回归测试。',
+    status: 'todo',
+    priority: 'high',
+  })
+  assert.equal(created.title, '修复登录错误提示')
+  assert.equal(board.listTasks({ projectId: 'p1' })[0].agentProfileId, profile.id)
+})
+
 test('user-created agents keep identity separate from their Harness preset', async () => {
   const { board, ctx } = await boardFixture({ withAgents: true })
   await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
@@ -519,14 +661,26 @@ test('agent profiles support versioned edits and reversible archive', async () =
     projectId: 'p1',
     name: 'Reviewer',
     presetId: 'review-runtime',
+    visibility: 'workspace',
+    concurrency: 2,
   })
+  assert.equal(created.ownerId, 'local-user')
+  assert.equal(created.visibility, 'workspace')
+  assert.equal(created.concurrency, 2)
   const updated = await board.updateAgentProfile(
     created.id,
-    { name: 'Lead reviewer', instructions: 'Check every acceptance condition.' },
+    {
+      name: 'Lead reviewer',
+      instructions: 'Check every acceptance condition.',
+      visibility: 'private',
+      concurrency: 3,
+    },
     created.version,
   )
   assert.equal(updated.version, 1)
   assert.equal(updated.name, 'Lead reviewer')
+  assert.equal(updated.visibility, 'private')
+  assert.equal(updated.concurrency, 3)
   await assert.rejects(
     () => board.updateAgentProfile(created.id, { name: 'Stale' }, created.version),
     err => err instanceof TaskboardError && err.code === 'version-conflict',
@@ -538,6 +692,40 @@ test('agent profiles support versioned edits and reversible archive', async () =
   assert.equal(board.listAgentProfiles('p1', true).length, 1)
   const restored = await board.setAgentProfileArchived(archived.id, false, archived.version)
   assert.equal(restored.archivedAt, undefined)
+})
+
+test('agent profile concurrency is validated and limits live assigned work', async () => {
+  const { board, ctx } = await boardFixture({ withAgents: true })
+  await board.createProject({ id: 'p1', name: 'Demo', workspacePath: '/repo' })
+  await assert.rejects(
+    () =>
+      board.createAgentProfile({
+        projectId: 'p1',
+        name: 'Invalid',
+        presetId: 'standard',
+        concurrency: 0,
+      }),
+    err => err instanceof TaskboardError && err.code === 'invalid-input',
+  )
+  const profile = await board.createAgentProfile({
+    projectId: 'p1',
+    name: 'One at a time',
+    presetId: 'standard',
+    concurrency: 1,
+  })
+  const first = await board.createTask(
+    { projectId: 'p1', title: 'First', agentProfileId: profile.id },
+    human,
+  )
+  const second = await board.createTask(
+    { projectId: 'p1', title: 'Second', agentProfileId: profile.id },
+    human,
+  )
+  await fromRestrictedFiber(ctx, child => startTask(child, board, first.id))
+  await assert.rejects(
+    () => fromRestrictedFiber(ctx, child => startTask(child, board, second.id)),
+    err => err instanceof TaskboardError && err.code === 'forbidden',
+  )
 })
 
 test('the inbox derives actionable events and persists read and archive state', async () => {
@@ -596,6 +784,96 @@ test('the inbox derives actionable events and persists read and archive state', 
   const restored = await board.updateInboxItem('p1', proposalItem.id, { archived: false })
   assert.ok(restored.readAt)
   assert.equal(restored.archivedAt, undefined)
+})
+
+test('a review inbox event remains readable and restorable after accept or send back', async () => {
+  const { board } = await boardFixture()
+  await board.createProject({ id: 'p1', name: 'Demo' })
+  const review = await board.createTask(
+    { projectId: 'p1', title: 'Review this', status: 'todo' },
+    human,
+  )
+  await board.openExecution(review.id, 'session-review', {
+    actor: human,
+    status: 'in_progress',
+  })
+  await board.updateTask(review.id, { status: 'in_review' }, { actor: robot })
+  const reviewItem = board.listInbox('p1').find(item => item.type === 'review_ready')
+  assert.ok(reviewItem)
+
+  await board.settleExecution(review.id, 'succeeded', { actor: human })
+  await board.updateTask(review.id, { status: 'done' }, { actor: human })
+  assert.ok(
+    board.listInbox('p1').some(item => item.id === reviewItem.id),
+    'accepting must not erase the review event',
+  )
+  const archived = await board.updateInboxItem('p1', reviewItem.id, {
+    read: true,
+    archived: true,
+  })
+  assert.ok(archived.archivedAt)
+  const restored = await board.updateInboxItem('p1', reviewItem.id, { archived: false })
+  assert.equal(restored.archivedAt, undefined)
+
+  const second = await board.createTask(
+    { projectId: 'p1', title: 'Send this back', status: 'todo' },
+    human,
+  )
+  await board.openExecution(second.id, 'session-send-back', {
+    actor: human,
+    status: 'in_progress',
+  })
+  await board.updateTask(second.id, { status: 'in_review' }, { actor: robot })
+  const secondItem = board
+    .listInbox('p1')
+    .find(item => item.type === 'review_ready' && item.taskId === second.id)
+  assert.ok(secondItem)
+  await board.settleExecution(second.id, 'canceled', { actor: human })
+  await board.updateTask(second.id, { status: 'todo', sessionId: undefined }, { actor: human })
+  assert.ok(
+    board.listInbox('p1').some(item => item.id === secondItem.id),
+    'sending back must not erase the review event',
+  )
+})
+
+test('each transition into review has a distinct durable inbox identity', async () => {
+  const { board } = await boardFixture()
+  await board.createProject({ id: 'p1', name: 'Demo' })
+
+  const executed = await board.createTask(
+    { projectId: 'p1', title: 'Review the same execution twice', status: 'todo' },
+    human,
+  )
+  await board.openExecution(executed.id, 'session-review-twice', {
+    actor: human,
+    status: 'in_progress',
+  })
+  await board.updateTask(executed.id, { status: 'in_review' }, { actor: robot })
+  await board.updateTask(executed.id, { status: 'todo' }, { actor: human })
+  await board.updateTask(executed.id, { status: 'in_review' }, { actor: robot })
+
+  const manual = await board.createTask(
+    { projectId: 'p1', title: 'Review without an execution', status: 'todo' },
+    human,
+  )
+  await board.updateTask(manual.id, { status: 'in_review' }, { actor: human })
+  await board.updateTask(manual.id, { status: 'todo' }, { actor: human })
+  await board.updateTask(manual.id, { status: 'in_review' }, { actor: human })
+
+  for (const task of [executed, manual]) {
+    const events = board
+      .listInbox('p1')
+      .filter(item => item.type === 'review_ready' && item.taskId === task.id)
+    assert.equal(events.length, 2)
+    assert.equal(new Set(events.map(item => item.id)).size, 2)
+
+    await board.updateInboxItem('p1', events[0].id, { archived: true })
+    const afterArchive = board
+      .listInbox('p1')
+      .filter(item => item.type === 'review_ready' && item.taskId === task.id)
+    assert.ok(afterArchive.find(item => item.id === events[0].id)?.archivedAt)
+    assert.equal(afterArchive.find(item => item.id === events[1].id)?.archivedAt, undefined)
+  }
 })
 
 test('an issue with a live session is not started twice', async () => {

@@ -12,6 +12,7 @@
  */
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
+import { LOCAL_USER_ID } from './local-user.ts'
 
 /** Branded record keys — plain strings on the medium, distinct at compile time. */
 export type ProjectId = string & { readonly __brand: 'ProjectId' }
@@ -261,10 +262,16 @@ export type SessionMessage = z.infer<typeof sessionMessageSchema>
 const agentProfileSchema = z.object({
   id: z.string(),
   projectId: z.string(),
+  /** Local owner identity; fixed at creation because this plugin has one user. */
+  ownerId: z.string().default(LOCAL_USER_ID),
   name: z.string(),
   description: z.string().default(''),
   instructions: z.string().default(''),
   presetId: z.string(),
+  /** Who may run the profile when the host grows beyond its local user. */
+  visibility: z.enum(['private', 'workspace']).default('private'),
+  /** Maximum live issue sessions assigned to this profile. */
+  concurrency: z.number().int().min(1).max(50).default(1),
   version: z.number().int().nonnegative(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -284,6 +291,8 @@ export type InboxReceipt = z.infer<typeof inboxReceiptSchema>
 /** The board's storage domain: work records plus agent profiles and inbox state. */
 export const taskboardDomain = defineDomain({
   name: 'taskboard',
+  // New agent-profile fields carry parser defaults, so version 2 rows remain
+  // readable without a destructive on-disk rewrite.
   version: 2,
   tables: {
     projects: domainTable<ProjectId, Project>(projectSchema),

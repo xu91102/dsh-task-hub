@@ -1,0 +1,41 @@
+[
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      {
+        "type": "tool-call-delta",
+        "index": 0,
+        "id": "call_create_profile",
+        "name": "agent_profile_create",
+        "argumentsDelta": "{\"name\":\"TypeScript 开发\",\"description\":\"负责 TypeScript 功能开发\",\"instructions\":\"先确认范围，完成后运行测试。\",\"concurrency\":2,\"visibility\":\"workspace\"}"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "call_create_profile",
+          "name": "agent_profile_create",
+          "arguments": "{\"name\":\"TypeScript 开发\",\"description\":\"负责 TypeScript 功能开发\",\"instructions\":\"先确认范围，完成后运行测试。\",\"concurrency\":2,\"visibility\":\"workspace\"}"
+        }
+      },
+      { "type": "usage", "usage": { "inputTokens": 20, "outputTokens": 8 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "PROFILE CREATED" },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": { "type": "text", "text": "PROFILE CREATED" }
+      },
+      { "type": "usage", "usage": { "inputTokens": 30, "outputTokens": 2 } },
+      { "type": "finish", "reason": { "kind": "stop" } }
+    ]
+  }
+]

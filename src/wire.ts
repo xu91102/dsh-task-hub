@@ -101,6 +101,11 @@ export interface TaskboardApi {
   'task.list': { params: TaskFilter; result: Task[] }
   'task.get': { params: { id: string }; result: TaskDetail | null }
   'task.create': { params: CreateTaskInput; result: Task }
+  /** Start a logged Harness conversation that turns a request into a confirmed task. */
+  'task.builder.start': {
+    params: { projectId: string; description: string; agentProfileId?: string }
+    result: { sessionId: string }
+  }
   'task.update': {
     params: { id: string; patch: UpdateTaskPatch; expectedVersion?: number }
     result: Task
@@ -154,6 +159,11 @@ export interface TaskboardApi {
     result: AgentProfile[]
   }
   'agent.runtime.list': { params: Record<never, never>; result: AgentRuntimeOption[] }
+  /** Start a persistent, logged Harness conversation for AI-assisted profile design. */
+  'agent.builder.start': {
+    params: { projectId: string; presetId: string; description: string }
+    result: { sessionId: string }
+  }
   'agent.create': {
     params: {
       projectId: string
@@ -161,13 +171,20 @@ export interface TaskboardApi {
       description?: string
       instructions?: string
       presetId: string
+      visibility?: AgentProfile['visibility']
+      concurrency?: number
     }
     result: AgentProfile
   }
   'agent.update': {
     params: {
       id: string
-      patch: Partial<Pick<AgentProfile, 'name' | 'description' | 'instructions' | 'presetId'>>
+      patch: Partial<
+        Pick<
+          AgentProfile,
+          'name' | 'description' | 'instructions' | 'presetId' | 'visibility' | 'concurrency'
+        >
+      >
       expectedVersion?: number
     }
     result: AgentProfile
@@ -197,6 +214,7 @@ export const TASKBOARD_METHODS = [
   'task.list',
   'task.get',
   'task.create',
+  'task.builder.start',
   'task.update',
   'comment.create',
   'task.start',
@@ -212,6 +230,7 @@ export const TASKBOARD_METHODS = [
   'message.post',
   'agent.list',
   'agent.runtime.list',
+  'agent.builder.start',
   'agent.create',
   'agent.update',
   'agent.archive',

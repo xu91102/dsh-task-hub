@@ -12,6 +12,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-storage-domain'
+import { LOCAL_USER } from './actors.ts'
 import {
   canTransition,
   taskboardDomain,
@@ -63,6 +64,11 @@ export class TaskboardError extends Error {
     super(message)
     this.name = 'TaskboardError'
   }
+}
+
+/** Whether an untrusted value is a supported agent visibility. */
+function isAgentVisibility(value: unknown): value is AgentProfile['visibility'] {
+  return value === 'private' || value === 'workspace'
 }
 
 /** Filter for {@link Taskboard.listTasks}; omitted fields do not constrain. */
@@ -225,6 +231,8 @@ export class Taskboard extends Service {
     description?: string
     instructions?: string
     presetId: string
+    visibility?: AgentProfile['visibility']
+    concurrency?: number
   }): Promise<AgentProfile> {
     if (this.projects.get(input.projectId as ProjectId) === undefined) {
       throw new TaskboardError('not-found', `project "${input.projectId}" does not exist`)
@@ -232,14 +240,24 @@ export class Taskboard extends Service {
     if (input.name.trim() === '') throw new TaskboardError('invalid-input', 'agent name is empty')
     if (input.presetId.trim() === '')
       throw new TaskboardError('invalid-input', 'agent preset is empty')
+    if (input.visibility !== undefined && !isAgentVisibility(input.visibility)) {
+      throw new TaskboardError('invalid-input', 'agent visibility must be private or workspace')
+    }
+    const concurrency = input.concurrency ?? 1
+    if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 50) {
+      throw new TaskboardError('invalid-input', 'agent concurrency must be an integer from 1 to 50')
+    }
     const now = new Date().toISOString()
     const agent: AgentProfile = {
       id: crypto.randomUUID(),
       projectId: input.projectId,
+      ownerId: LOCAL_USER.id,
       name: input.name.trim(),
       description: input.description?.trim() ?? '',
       instructions: input.instructions?.trim() ?? '',
       presetId: input.presetId,
+      visibility: input.visibility ?? 'private',
+      concurrency,
       version: 0,
       createdAt: now,
       updatedAt: now,
@@ -251,7 +269,12 @@ export class Taskboard extends Service {
   /** Edit identity, behavior, or runtime while refusing stale forms. */
   async updateAgentProfile(
     id: string,
-    patch: Partial<Pick<AgentProfile, 'name' | 'description' | 'instructions' | 'presetId'>>,
+    patch: Partial<
+      Pick<
+        AgentProfile,
+        'name' | 'description' | 'instructions' | 'presetId' | 'visibility' | 'concurrency'
+      >
+    >,
     expectedVersion?: number,
   ): Promise<AgentProfile> {
     if (this.agents.get(id as AgentProfileId) === undefined) {
@@ -266,14 +289,29 @@ export class Taskboard extends Service {
       }
       const name = patch.name?.trim()
       const presetId = patch.presetId?.trim()
+      const concurrency = patch.concurrency
       if (name === '') throw new TaskboardError('invalid-input', 'agent name is empty')
       if (presetId === '') throw new TaskboardError('invalid-input', 'agent preset is empty')
+      if (patch.visibility !== undefined && !isAgentVisibility(patch.visibility)) {
+        throw new TaskboardError('invalid-input', 'agent visibility must be private or workspace')
+      }
+      if (
+        concurrency !== undefined &&
+        (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 50)
+      ) {
+        throw new TaskboardError(
+          'invalid-input',
+          'agent concurrency must be an integer from 1 to 50',
+        )
+      }
       return {
         ...current,
         ...(name !== undefined ? { name } : {}),
         ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
         ...(patch.instructions !== undefined ? { instructions: patch.instructions.trim() } : {}),
         ...(presetId !== undefined ? { presetId } : {}),
+        ...(patch.visibility !== undefined ? { visibility: patch.visibility } : {}),
+        ...(concurrency !== undefined ? { concurrency } : {}),
         version: current.version + 1,
         updatedAt: new Date().toISOString(),
       }
@@ -754,9 +792,11 @@ export class Taskboard extends Service {
     })
 
     if (patch.status !== undefined && patch.status !== before.status) {
+      const executionId = patch.status === 'in_review' ? next.executions.at(-1)?.id : undefined
       await this.record(id as TaskId, 'status', opts.actor, {
         from: before.status,
         to: patch.status,
+        ...(executionId !== undefined ? { executionId } : {}),
       })
     }
     if (cleaned.projectId !== undefined && cleaned.projectId !== before.projectId) {
@@ -958,22 +998,43 @@ export class Taskboard extends Service {
           ...(task.proposedBy !== undefined ? { agentName: task.proposedBy.agent } : {}),
         })
       }
-      if (task.status === 'in_review') {
+      const reviewActivities = this.listActivity(task.id).filter(
+        activity => activity.kind === 'status' && activity.detail.to === 'in_review',
+      )
+      const reviewEvents =
+        reviewActivities.length > 0
+          ? reviewActivities.map(activity => {
+              const recordedExecutionId =
+                typeof activity.detail.executionId === 'string'
+                  ? activity.detail.executionId
+                  : undefined
+              const activityTime = Date.parse(activity.createdAt)
+              const execution =
+                task.executions.find(candidate => candidate.id === recordedExecutionId) ??
+                [...task.executions]
+                  .reverse()
+                  .find(candidate => candidate.startedAt <= activityTime)
+              return { id: activity.id, createdAt: activity.createdAt, execution }
+            })
+          : task.status === 'in_review'
+            ? [{ id: 'initial', createdAt: task.updatedAt, execution: latest }]
+            : []
+      for (const review of reviewEvents) {
+        const execution = review.execution
         items.push({
-          id: `review:${task.id}:${latest?.id ?? 'current'}`,
+          id: `review:${task.id}:${review.id}`,
           projectId,
           type: 'review_ready',
           taskId: task.id,
           title: task.title,
           summary: '任务已完成，等待你的审核。',
-          createdAt:
-            latest?.endedAt !== undefined ? new Date(latest.endedAt).toISOString() : task.updatedAt,
-          ...(latest?.agentName !== undefined
-            ? { agentName: latest.agentName }
+          createdAt: review.createdAt,
+          ...(execution?.agentName !== undefined
+            ? { agentName: execution.agentName }
             : task.assignee !== undefined
               ? { agentName: task.assignee.name }
               : {}),
-          ...(latest?.sessionId !== undefined ? { sessionId: latest.sessionId } : {}),
+          ...(execution?.sessionId !== undefined ? { sessionId: execution.sessionId } : {}),
         })
       }
       if (latest?.result === 'failed') {

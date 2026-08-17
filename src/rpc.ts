@@ -15,6 +15,8 @@ import {
   resolveProject,
   sendSessionMail,
   sessionCwd,
+  startAgentBuilder,
+  startTaskBuilder,
   startNextTask,
   startTask,
 } from './session-link.ts'
@@ -90,6 +92,8 @@ async function dispatch(
     }
     case 'task.create':
       return board.createTask(p as unknown as ParamsOf<'task.create'>, LOCAL_USER)
+    case 'task.builder.start':
+      return startTaskBuilder(ctx, board, p as unknown as ParamsOf<'task.builder.start'>)
     case 'task.update': {
       const { id, patch, expectedVersion } = p as unknown as ParamsOf<'task.update'>
       return board.updateTask(id, patch, {
@@ -237,6 +241,8 @@ async function dispatch(
         ...(preset.broken !== undefined ? { broken: preset.broken } : {}),
       }))
     }
+    case 'agent.builder.start':
+      return startAgentBuilder(ctx, board, p as unknown as ParamsOf<'agent.builder.start'>)
     case 'agent.create':
       return board.createAgentProfile(p as unknown as ParamsOf<'agent.create'>)
     case 'agent.update': {

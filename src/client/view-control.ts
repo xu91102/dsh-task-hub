@@ -14,6 +14,8 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 
 /** The orchestrator's own view-ring entry id (matches index.tsx). */
 export const TASKBOARD_VIEW_ID = 'taskboard'
+/** The Harness conversation entry id. */
+export const CHAT_VIEW_ID = 'chat'
 
 /** Public face of the patched conversation shell's view switcher. */
 export interface ConversationViewControl {
@@ -45,4 +47,13 @@ export function conversationViewControl(ctx: ClientContext): ConversationViewCon
  */
 export function openTaskboardView(ctx: ClientContext, sessionId: string): void {
   conversationViewControl(ctx)?.open(sessionId, TASKBOARD_VIEW_ID)
+}
+
+/**
+ * Return one session to its normal conversation view. A no-op when the patch is absent.
+ * @param ctx - Client context.
+ * @param sessionId - The session whose conversation should be shown.
+ */
+export function openConversationView(ctx: ClientContext, sessionId: string): void {
+  conversationViewControl(ctx)?.open(sessionId, CHAT_VIEW_ID)
 }
