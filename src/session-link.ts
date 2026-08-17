@@ -25,7 +25,9 @@ import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelectionRef, ModelSelection } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-goal'
+import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-workspace'
 import { LOCAL_USER } from './actors.ts'
 import type { Actor, AgentProfile, Project, SessionMessage, Task } from './domain.ts'
@@ -136,7 +138,11 @@ export function selectionRefFor(selection: ModelSelection | undefined): ModelSel
  */
 async function spawnAgentSession(
   ctx: Context,
-  options: { cwd: string; presetId?: string },
+  options: {
+    cwd: string
+    presetId?: string
+    configure?: (agentCtx: Context) => void | Promise<void>
+  },
 ): Promise<Agent> {
   const agents = ctx.reflect.get('agents')
   if (agents === undefined)
@@ -156,6 +162,7 @@ async function spawnAgentSession(
     setup: async (agentCtx: Context) => {
       if (selection !== undefined) installModelSelection(agentCtx, selectionRefFor(selection))
       if (presets !== undefined && preset !== undefined) await presets.mount(agentCtx, preset.id)
+      await options.configure?.(agentCtx)
     },
   })
   const agent: Agent = handle.agent
@@ -201,6 +208,68 @@ export async function startAgentBuilder(
   const agent = await spawnAgentSession(ctx, {
     cwd: project.workspacePath ?? process.cwd(),
     presetId: options.presetId,
+    configure: builderCtx => {
+      builderCtx.effect(
+        () =>
+          builderCtx.tools.register(
+            defineTool({
+              name: 'agent_profile_create',
+              description:
+                'Create the agreed user-owned agent profile after the user explicitly confirms the final configuration. Call this once only.',
+              parameters: {
+                name: { type: 'string', required: true, description: 'Short display name' },
+                description: {
+                  type: 'string',
+                  required: true,
+                  description: 'One-line responsibility summary',
+                },
+                instructions: {
+                  type: 'string',
+                  required: true,
+                  description: 'Complete standing instructions for future task sessions',
+                },
+                concurrency: {
+                  type: 'integer',
+                  required: true,
+                  description: 'Maximum parallel tasks, from 1 to 50',
+                },
+                visibility: {
+                  type: 'string',
+                  enum: ['private', 'workspace'],
+                  required: true,
+                  description: 'Who may view and assign the profile',
+                },
+              },
+              output: {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string', required: true },
+                    name: { type: 'string', required: true },
+                  },
+                  additionalProperties: false,
+                },
+                render: (_args, value) => [
+                  { type: 'text', text: `Created agent profile “${value.name}”.` },
+                ],
+              },
+              async execute(args) {
+                const profile = await board.createAgentProfile({
+                  projectId: options.projectId,
+                  presetId: options.presetId,
+                  name: args.name,
+                  description: args.description,
+                  instructions: args.instructions,
+                  concurrency: args.concurrency,
+                  visibility: args.visibility as AgentProfile['visibility'],
+                })
+                return { id: profile.id, name: profile.name }
+              },
+            }),
+          ),
+        'taskboard: builder profile creation tool',
+      )
+    },
   })
   try {
     ctx.reflect.get('goals')?.create(agent, { objective: 'Design a user-created agent profile' })
@@ -217,6 +286,8 @@ export async function startAgentBuilder(
             'Ask focused questions about responsibilities, boundaries, workflow, quality checks, and reporting.',
             'When the role is clear, produce a concise final profile with these exact sections:',
             'Name, Description, Standing instructions, Recommended concurrency, Access scope.',
+            'Show that final profile to the user and ask for explicit confirmation.',
+            'Only after confirmation, call agent_profile_create exactly once to save it to the roster.',
             `Initial role description: ${description}`,
           ].join('\n'),
         },

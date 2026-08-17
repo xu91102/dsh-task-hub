@@ -502,7 +502,31 @@ test('AI agent builder opens a real logged Harness conversation', async () => {
   assert.equal(entry.agent.followups.length, 1)
   assert.match(entry.agent.followups[0].content[0].text, /TypeScript 功能开发/)
   assert.match(entry.agent.followups[0].content[0].text, /Standing instructions/)
+  assert.match(entry.agent.followups[0].content[0].text, /agent_profile_create/)
   assert.deepEqual(ctx.goals.created, [{ objective: 'Design a user-created agent profile' }])
+
+  const registered = []
+  await entry.options.setup({
+    on: () => () => {},
+    tools: {
+      register: tool => {
+        registered.push(tool)
+        return () => {}
+      },
+    },
+    effect: factory => factory(),
+  })
+  assert.equal(registered[0].name, 'agent_profile_create')
+  const created = await registered[0].execute({
+    name: 'TypeScript 开发',
+    description: '负责 TypeScript 功能开发',
+    instructions: '先确认范围，完成后运行测试。',
+    concurrency: 2,
+    visibility: 'workspace',
+  })
+  assert.equal(created.name, 'TypeScript 开发')
+  assert.equal(board.listAgentProfiles('p1')[0].presetId, 'coding-runtime')
+  assert.equal(board.listAgentProfiles('p1')[0].visibility, 'workspace')
 })
 
 test('user-created agents keep identity separate from their Harness preset', async () => {

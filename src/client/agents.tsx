@@ -500,7 +500,7 @@ function BuilderSetupPage({
             <strong>真实 Harness Builder 会话</strong>
             <p>
               开始后会打开一条独立、持久化的 Harness 会话。Builder
-              会继续询问职责边界、工作流和质量要求，最后给出可审核的完整智能体配置。
+              会继续询问职责边界、工作流和质量要求，给出完整配置，并在你明确确认后直接保存到智能体名册。
             </p>
           </div>
           <Button
