@@ -4,73 +4,76 @@
 
 </div>
 
-<!-- AUTO-GENERATED -->
-
-<h1 align="center">dsh-task-hub</h1>
+<h1 align="center">DeepSeek Harness Task Hub</h1>
 <p align="center">
-  <strong>DeepSeek Harness 的本地优先 issue 编排插件：每个仓库一块看板、每个 issue 一个独立会话、调度器自己从待办里捞活干</strong>
+  <strong>在 DeepSeek Harness 工作区内管理任务、收件箱和用户自建智能体</strong>
   <br />
-  <em>Cordis 插件 · 按工作区划分看板 · 每 issue 独立会话 · 自动拉取调度器 · 两道人工审批关口</em>
+  <em>独立 Cordis 插件 · 本地持久化 · 每次执行一个真实 Harness 对话</em>
 </p>
 
-任务工作区、收件箱和用户自建智能体的交互模型参考了 [Multica](https://github.com/multica-ai/multica)。本插件是独立的 DeepSeek Harness 实现，不嵌入 Multica 源码。
+`dsh-task-hub` 是一个独立插件，为 DeepSeek Harness 增加项目任务看板、人工收件箱和用户自建智能体名册。看板根据当前会话的工作区解析；任务分配后，会使用所选 Agent Preset 和当前模型配置，在一个真实、持久化的 Harness 对话中执行。
+
+产品交互参考了 [Multica](https://github.com/multica-ai/multica)，实现则完全使用 DeepSeek Harness 的插件服务、存储、会话 API、工具和客户端扩展槽。本项目不是 Multica 的分叉，也不嵌入 Multica 源码。
 
 <p align="center">
-  <a href="#quick-start"><img src="https://img.shields.io/badge/快速开始-4CAF50?style=for-the-badge" alt="Quick Start" /></a>
+  <a href="#快速开始"><img src="https://img.shields.io/badge/快速开始-4CAF50?style=for-the-badge" alt="快速开始" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-D97706?style=for-the-badge" alt="License" /></a>
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Node.js-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js" />
-  <img src="https://img.shields.io/badge/React-20232A?style=flat&logo=react&logoColor=61DAFB" alt="React" />
-  <img src="https://img.shields.io/badge/Zod-3068B7?style=flat&logo=zod&logoColor=white" alt="Zod" />
-  <img src="https://img.shields.io/badge/esbuild-FFCF00?style=flat&logo=esbuild&logoColor=black" alt="esbuild" />
-  <img src="https://img.shields.io/badge/Cordis-2D2D2D?style=flat" alt="Cordis" />
-</p>
+---
+
+## 已实现功能
+
+| 功能面         | 当前行为                                                                                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 任务           | 按工作区划分的看板，支持项目、成员和智能体筛选；手动或智能体辅助创建；在合法状态间拖拽；管理优先级、标签、定时规则、评论、活动和执行历史                        |
+| 任务执行       | 手动开工或自动拉取会创建新的持久化 Harness 会话，挂载所选 Agent Preset，应用当前 provider、model 和 reasoning 配置，记录执行结果，并把准确会话关联回任务        |
+| 用户自建智能体 | 用户可以创建和编辑持久化智能体身份，包括名称、职责、长期指令、访问范围、preset 和并行度；工作量、最近活跃时间和运行次数来自真实任务执行，而不是硬编码运行时列表 |
+| 收件箱         | 持久化展示智能体提案、待审核结果、失败执行和跨智能体消息，支持已读/归档，并可直接打开关联任务和会话                                                             |
+| 人工控制       | 只有真人可以批准智能体提案、验收完成结果或归档已验收工作；约束位于服务层，因此 UI、RPC 和模型工具遵循同一规则                                                   |
+| 调度器         | 可选自动从 `todo` 按优先级拉取任务，实时限制并行度，并回收已经消失的任务会话                                                                                    |
 
 ---
 
-## 功能特性
+## 真实项目流程
 
-| 特性                    | 说明                                                                                                                                                                                                     |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 每个仓库一块看板        | 看板绑定会话的工作目录而不是对话本身：同一仓库的两个会话共享一块板，另一个仓库的会话看到自己的板——归属由宿主解析，浏览器端永远不会把不同项目的 issue 混在一起                                            |
-| 每个 issue 一个独立会话 | 「Work on this」会为这个 issue 新建一个独立会话并把 brief 交给它，issue 与它绑定，每个 issue 的对话记录和成本都各自独立——也因此可以多个同时跑                                                            |
-| 自动拉取调度器          | 调度器维持最多 N 个进行中的 issue，并自行从 `todo` 按优先级补位；并行度和自动拉取开关在看板头部实时可调                                                                                                  |
-| 三道人工关口            | agent 永远不能把 issue 移出 `proposed`、把自己标成 `done` 或归档工作：提案需要你批准，完成的工作需要你验收，归档也由你决定——都在服务层强制，不是 UI 上的约定                                             |
-| 持久化审批队列          | agent 提出的 issue 落在 `proposed` 列，等真人批准或拒绝——跨重启持久保存，不像一次性审批弹窗那样会丢                                                                                                      |
-| 看板是聊天的平级页签    | 看板注册进 conversation view ring，作为 Chat / Trajectory 旁边的一个页签出现，而不是独立页面                                                                                                             |
-| Task Hub 侧边栏         | 常驻的「任务 / 收件箱 / 智能体」入口打开同一个工作区级 Hub；任务卡片可跨状态列拖拽，并以完整文档和属性栏查看                                                                                             |
-| Multica 式任务流        | 全高状态列、紧凑任务卡片、归属范围筛选和宽版任务编辑器参考 Multica，并统一使用 Harness 主题 token；支持手动创建与智能体辅助创建                                                                          |
-| 用户自建智能体          | 参考 Multica 的名册、完整创建页和详情页统一管理身份、Owner、权限、长期指令、运行时、并行度、工作量和真实执行统计；AI Builder 会启动持久化、可追溯的 Harness 对话，并通过会话专用工具保存用户确认后的配置 |
-| 人工收件箱              | 智能体提案、待审核结果、失败执行和跨智能体消息进入同一个可读/归档队列，可直接打开任务、审核结果或跳转执行会话；接受或退回任务后仍保留审核事件，以便完成已读/归档状态                                     |
+以下图片全部来自本仓库安装到本地 DeepSeek Harness `web` profile 后的真实运行界面。图中的任务、智能体、会话、执行结果和收件箱事件均为实际持久化的项目数据，不是 Mock，也不是独立演示页面。
 
----
+### 1. 在任务看板管理仓库工作
 
-## 截图
-
-以下截图来自插件实际运行的本地 DeepSeek Harness `web` profile，展示真实的侧边栏集成、工作区数据、任务流程和智能体界面，不是独立 Mock 页面。
-
-**任务看板**：Multica 式工作区看板嵌入真实 Harness 对话，包含归属筛选、项目筛选、调度器、完整状态列、执行元数据和拖拽目标：
+侧边栏入口由插件贡献。看板使用当前 Harness 工作区，展示项目筛选、调度器状态、任务数量、执行元数据和可拖拽状态列。
 
 ![DeepSeek Harness 中真实运行的任务看板，包含项目筛选、调度器和状态列](docs/assets/task-board.png)
 
-**任务详情**：点击任务卡片任意非操作区域即可打开完整任务文档，查看描述、智能体分配、执行历史、关联会话、调度规则、活动流水和可编辑属性。「打开会话」会选中该次执行对应的会话并切回「对话」页签，立即展示任务提示和真实运行结果：
+### 2. 打开完整任务文档
+
+选择卡片后可以查看描述、智能体分配、优先级、执行记录、关联会话、定时规则、活动流水和可编辑属性。「打开会话」会选择该次执行的准确 Harness 会话，并把页面切回「对话」。
 
 ![DeepSeek Harness 中真实运行的任务详情，包含执行情况和属性栏](docs/assets/task-detail.png)
 
-**创建任务**：宽版手动编辑器使用 Harness 主题 token，并在看板内统一展示状态、优先级、智能体分配和项目上下文；切换模式后会进入真实智能体辅助创建流程：
+### 3. 手动或通过智能体创建任务
+
+手动编辑器同时展示项目、状态、优先级和执行智能体。切换到智能体辅助模式后，会启动一段可追溯的 Harness 对话，只有用户确认建议字段后才持久化任务。
 
 ![DeepSeek Harness 中真实运行的创建任务弹窗](docs/assets/task-create.png)
 
-**用户自建智能体**：持久化智能体名册统一展示 Owner、访问权限、运行时、最近活跃时间和真实运行次数：
+### 4. 创建可复用的智能体身份
+
+名册中的智能体由用户自己创建，运行时、访问范围、当前工作量、最近活跃时间和运行次数均来自持久化配置与真实任务历史。
 
 ![DeepSeek Harness 中真实运行的用户自建智能体名册](docs/assets/agents.png)
 
-**人工收件箱**：智能体提案、待审核结果、失败执行和智能体消息进入同一个可读、可归档队列：
+### 5. 在收件箱审核真实智能体结果
+
+这张有内容的收件箱截图展示了真实任务执行产生的持久化审核事件。每条事件都可以打开任务、接受或退回结果、归档通知，或跳转到关联智能体会话。
 
 ![DeepSeek Harness 中真实运行的人工收件箱](docs/assets/inbox.png)
+
+### 6. 在 Harness 对话中查看执行过程
+
+任务会话就是普通的持久化 Harness 对话，因此从任务或收件箱跳转后，完整提示词、注入上下文、工具轨迹、模型结果和后续输入框都仍然可见。
+
+![DeepSeek Harness 中真实任务会话显示已经完成的 E2E 结果](docs/assets/task-session.png)
 
 ---
 
