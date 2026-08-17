@@ -1,0 +1,8 @@
+# dsh-task-hub bundle patch: one row mounts the host half. The same package
+# name is what the client-modules scan matches to serve the browser half, so no
+# second row is needed.
+#
+# Override the config in your own profile patch with a row of the same id.
+- insert:
+    - id: taskboard
+      name: '@xu91102/dsh-task-hub'
