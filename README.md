@@ -50,15 +50,23 @@ The task workspace, inbox, and user-created agent interaction model are inspired
 
 ## Screenshots
 
-The board rendered with sample data — no project details from any real deployment.
+These screenshots were captured from the plugin running in a local DeepSeek Harness `web` profile. They show the real sidebar integration, workspace data, task flow, and agent UI rather than a standalone mock page.
 
-**Board view**: workspace-scoped board with the approval queue, the scheduler strip (auto-pull toggle, parallelism, live running/waiting counts), and the session chip on the in-flight issue:
+**Task board**: the workspace-scoped Multica-style board inside a real Harness conversation, with ownership filters, project filters, scheduler controls, status columns, execution metadata, and drag-and-drop targets:
 
-![Board view: proposed, backlog, todo, in progress, in review, and done columns](docs/assets/board.png)
+![Real DeepSeek Harness task board with project filters, scheduler controls, and status columns](docs/assets/task-board.png)
 
-**Issue detail**, expanded from a card, showing the unified acceptance controls — Accept, or Send back with a reason that lands as a comment:
+**Create task**: the wide manual composer uses Harness theme tokens and keeps status, priority, agent assignment, and project context visible without leaving the board. Switching modes opens the real agent-assisted task flow:
 
-![Issue detail expanded from a card, with the acceptance controls, description, labels, and comment trail](docs/assets/board-detail.png)
+![Real task creation dialog inside DeepSeek Harness](docs/assets/task-create.png)
+
+**User-created agents**: persistent agent identities are listed with owner, access, runtime, recent activity, and real run counts:
+
+![Real user-created agent roster inside DeepSeek Harness](docs/assets/agents.png)
+
+**Human inbox**: proposals, review-ready work, failures, and agent messages share one readable and archivable queue:
+
+![Real human inbox inside DeepSeek Harness](docs/assets/inbox.png)
 
 ---
 

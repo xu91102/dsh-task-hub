@@ -50,15 +50,23 @@
 
 ## 截图
 
-看板使用示例数据渲染——不包含任何真实部署的项目细节。
+以下截图来自插件实际运行的本地 DeepSeek Harness `web` profile，展示真实的侧边栏集成、工作区数据、任务流程和智能体界面，不是独立 Mock 页面。
 
-**看板视图**：按工作区划分的看板，包含审批队列、调度器控制条（自动拉取开关、并行度、实时 running/waiting 计数），以及进行中 issue 上的会话标识：
+**任务看板**：Multica 式工作区看板嵌入真实 Harness 对话，包含归属筛选、项目筛选、调度器、完整状态列、执行元数据和拖拽目标：
 
-![看板视图：proposed、backlog、todo、in progress、in review、done 各列](docs/assets/board.png)
+![DeepSeek Harness 中真实运行的任务看板，包含项目筛选、调度器和状态列](docs/assets/task-board.png)
 
-**Issue 详情**，从卡片展开，显示统一验收控件——Accept（验收通过），或填写理由 Send back（打回，理由会落成一条评论）：
+**创建任务**：宽版手动编辑器使用 Harness 主题 token，并在看板内统一展示状态、优先级、智能体分配和项目上下文；切换模式后会进入真实智能体辅助创建流程：
 
-![从卡片展开的 issue 详情：验收控件、描述、标签和评论流水](docs/assets/board-detail.png)
+![DeepSeek Harness 中真实运行的创建任务弹窗](docs/assets/task-create.png)
+
+**用户自建智能体**：持久化智能体名册统一展示 Owner、访问权限、运行时、最近活跃时间和真实运行次数：
+
+![DeepSeek Harness 中真实运行的用户自建智能体名册](docs/assets/agents.png)
+
+**人工收件箱**：智能体提案、待审核结果、失败执行和智能体消息进入同一个可读、可归档队列：
+
+![DeepSeek Harness 中真实运行的人工收件箱](docs/assets/inbox.png)
 
 ---
 
